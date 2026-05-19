@@ -385,7 +385,7 @@ const STORAGE_KEYS = {
    SUPABASE CONNECTION
    ============================================================ */
 const SUPABASE_URL = "https://frmqhrjydcqsdvwjnqxe.supabase.co";
-const SUPABASE_ANON_KEY = "REPLACE_WITH_YOUR_SUPABASE_ANON_KEY";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybXFocmp5ZGNxc2R2d2pucXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMjE2MDYsImV4cCI6MjA5NDU5NzYwNn0.1ykh5q3lEFzE6YlEuH2qxhTVCH0KcUfVZdCFkOpqrBM";
 
 const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
@@ -399,7 +399,7 @@ const METRICS = [
   { id: 'channel_members',  name: 'Участники канала',          desc: 'Общее число подписчиков канала' },
   { id: 'new_members',      name: 'Новые участники',           desc: 'Прирост за день' },
   { id: 'left_members',     name: 'Выбывшие',                  desc: 'Покинули канал/чат' },
-  { id: 'chat_posts',       name: 'Посты в чате',              desc: 'Сообщения за день' },
+  { id: 'chat_messages_count', name: 'Сообщения чата',         desc: 'Сообщения за день' },
   { id: 'registered_tables',name: 'Зарегистр. таблиц',         desc: 'Новые таблицы за день' }
 ];
 
@@ -638,7 +638,7 @@ async function loadSupabaseDailyReports() {
 
     const { data, error } = await supabaseClient
       .from('daily_reports')
-      .select('report_date, full_report, created_at')
+      .select('*')
       .order('report_date', { ascending: false });
 
     if (error) {
@@ -654,6 +654,29 @@ async function loadSupabaseDailyReports() {
       const date = report.report_date;
       if (!date) return;
       if (!all[date]) all[date] = {};
+      all[date].channel_members = {
+  fact: report.channel_members ?? null,
+  plan: all[date].channel_members?.plan ?? 0,
+  comment: ''
+};
+
+all[date].channel_posts_count = {
+  fact: report.channel_posts_count ?? null,
+  plan: all[date].channel_posts_count?.plan ?? 0,
+  comment: ''
+};
+
+all[date].chat_members = {
+  fact: report.chat_members ?? null,
+  plan: all[date].chat_members?.plan ?? 0,
+  comment: ''
+};
+
+all[date].chat_messages_count = {
+  fact: report.chat_messages_count ?? null,
+  plan: all[date].chat_messages_count?.plan ?? 0,
+  comment: ''
+};
       const parsed = parseFullReportToMetrics(report.full_report);
 
       Object.entries(parsed).forEach(([metricId, fact]) => {
@@ -2413,4 +2436,49 @@ document.addEventListener('click', e => {
 })();
 </script>
 </body>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+  const SUPABASE_URL = "https://frmqhrjydcqsdvwjnqxe.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybXFocmp5ZGNxc2R2d2pucXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMjE2MDYsImV4cCI6MjA5NDU5NzYwNn0.1ykh5q3lEFzE6YlEuH2qxhTVCH0KcUfVZdCFkOpqrBM";
+
+  const supabaseClient = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY
+  );
+
+  async function loadReports() {
+    const { data, error } = await supabaseClient
+      .from("daily_reports")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const report = data[0];
+
+    if (!report) return;
+
+    document.getElementById("channel_members").textContent =
+      report.channel_members || "—";
+
+    document.getElementById("channel_posts_count").textContent =
+      report.channel_posts_count || "—";
+
+    document.getElementById("chat_members").textContent =
+      report.chat_members || "—";
+
+    document.getElementById("chat_messages_count").textContent =
+      report.chat_messages_count || "—";
+
+    document.getElementById("full_report").textContent =
+      report.full_report || "";
+  }
+
+  loadReports();
+</script>
 </html>
