@@ -1,0 +1,2416 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Р+ · Панель отчетности</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --bg-2: #11141b;
+    --panel: #161a23;
+    --panel-2: #1c2130;
+    --border: #242a38;
+    --text: #e7ecf3;
+    --muted: #8a93a6;
+    --accent: #5b8def;
+    --accent-2: #7c5cff;
+    --green: #2ecc71;
+    --yellow: #f1c40f;
+    --red: #e74c3c;
+    --shadow: 0 6px 24px rgba(0,0,0,0.35);
+  }
+  [data-theme="light"] {
+    --bg: #f5f7fb;
+    --bg-2: #eef1f7;
+    --panel: #ffffff;
+    --panel-2: #f8fafc;
+    --border: #e2e7f0;
+    --text: #0f1421;
+    --muted: #5b6577;
+    --accent: #2f6fed;
+    --accent-2: #6e4cff;
+    --green: #18a957;
+    --yellow: #d49a00;
+    --red: #d6402b;
+    --shadow: 0 6px 24px rgba(15,20,33,0.08);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select, textarea {
+    font-family: inherit;
+    color: inherit;
+  }
+  /* ---------- LAYOUT ---------- */
+  .app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  .sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 18px 14px;
+    position: sticky; top: 0; height: 100vh;
+    overflow-y: auto;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px 18px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .brand-logo {
+    width: 36px; height: 36px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: grid; place-items: center; color: white; font-weight: 700;
+  }
+  .brand-title { font-weight: 700; font-size: 15px; }
+  .brand-sub { font-size: 11px; color: var(--muted); }
+  .nav { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 9px;
+    color: var(--muted); cursor: pointer; user-select: none;
+    border: 1px solid transparent;
+  }
+  .nav-item:hover { background: var(--panel-2); color: var(--text); }
+  .nav-item.active {
+    background: linear-gradient(135deg, rgba(91,141,239,0.12), rgba(124,92,255,0.10));
+    color: var(--text); border-color: var(--border);
+  }
+  .nav-ico { width: 18px; text-align: center; opacity: 0.9; }
+
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .topbar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 22px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-left { display: flex; align-items: center; gap: 14px; }
+  .page-title { font-size: 18px; font-weight: 700; }
+  .topbar-right { display: flex; align-items: center; gap: 10px; }
+
+  .content { padding: 22px; }
+  .row { display: grid; gap: 14px; }
+  .row.cols-6 { grid-template-columns: repeat(6, 1fr); }
+  .row.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .row.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .row.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 1200px) { .row.cols-6 { grid-template-columns: repeat(3, 1fr); } .row.cols-4 { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 760px) { .app { grid-template-columns: 1fr; } .sidebar { display: none; } .row.cols-6, .row.cols-4, .row.cols-3, .row.cols-2 { grid-template-columns: 1fr; } }
+
+  /* ---------- PANELS ---------- */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: var(--shadow);
+  }
+  .panel h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--text); }
+  .panel .panel-sub { color: var(--muted); font-size: 12px; margin-top: -6px; margin-bottom: 12px; }
+
+  /* ---------- KPI ---------- */
+  .kpi {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow);
+    position: relative; overflow: hidden;
+  }
+  .kpi .label { font-size: 12px; color: var(--muted); }
+  .kpi .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+  .kpi .delta { font-size: 12px; margin-top: 4px; display: flex; gap: 8px; align-items: baseline; }
+  .kpi .bar { height: 6px; background: var(--panel-2); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+  .kpi .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .4s; }
+  .kpi.status-green .bar > span { background: var(--green); }
+  .kpi.status-yellow .bar > span { background: var(--yellow); }
+  .kpi.status-red .bar > span { background: var(--red); }
+  .kpi.status-green .pct { color: var(--green); }
+  .kpi.status-yellow .pct { color: var(--yellow); }
+  .kpi.status-red .pct { color: var(--red); }
+  .pct { font-weight: 600; }
+
+  /* ---------- TABLE ---------- */
+  table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.tbl th, table.tbl td {
+    padding: 10px 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+  }
+  table.tbl th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  table.tbl tr:hover td { background: var(--panel-2); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .pill.green { background: rgba(46,204,113,0.15); color: var(--green); }
+  .pill.yellow { background: rgba(241,196,15,0.15); color: var(--yellow); }
+  .pill.red { background: rgba(231,76,60,0.15); color: var(--red); }
+  .pill.gray { background: var(--panel-2); color: var(--muted); }
+
+  /* ---------- FORMS ---------- */
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .field input, .field select, .field textarea {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,141,239,0.18);
+  }
+  .field textarea { resize: vertical; min-height: 48px; }
+  .btn {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: white; border: 0; border-radius: 9px; padding: 9px 14px;
+    cursor: pointer; font-weight: 600; font-size: 13px;
+    box-shadow: var(--shadow); transition: transform .08s ease, opacity .15s;
+  }
+  .btn:hover { opacity: .94; }
+  .btn:active { transform: translateY(1px); }
+  .btn.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
+  .btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); box-shadow: none; }
+  .btn.danger { background: var(--red); }
+  .btn-sm { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
+
+  /* metric row inside daily form */
+  .metric-row {
+    display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr 2fr;
+    gap: 10px; align-items: end;
+    padding: 12px 0; border-bottom: 1px dashed var(--border);
+  }
+  .metric-row:last-child { border-bottom: 0; }
+  .metric-name { font-weight: 600; }
+  .metric-name small { display: block; color: var(--muted); font-weight: 400; font-size: 11px; }
+  @media (max-width: 920px) { .metric-row { grid-template-columns: 1fr 1fr; } }
+
+  /* login */
+  .login-screen {
+    min-height: 100vh; display: grid; place-items: center;
+    background: radial-gradient(1100px 600px at 20% -10%, rgba(91,141,239,0.20), transparent 60%),
+                radial-gradient(900px 500px at 110% 110%, rgba(124,92,255,0.18), transparent 60%),
+                var(--bg);
+  }
+  .login-card { width: 100%; max-width: 380px; }
+  .login-card .panel { padding: 22px; }
+
+  /* modal */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    display: grid; place-items: center; z-index: 50;
+  }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px; width: 100%; max-width: 520px; box-shadow: var(--shadow);
+  }
+  .modal h3 { margin: 0 0 10px; }
+  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+
+  /* misc */
+  .row-actions { display: flex; gap: 8px; }
+  .flex { display: flex; }
+  .flex.gap-8 { gap: 8px; }
+  .flex.gap-12 { gap: 12px; }
+  .flex.between { justify-content: space-between; }
+  .flex.center { align-items: center; }
+  .mt-12 { margin-top: 12px; }
+  .mt-16 { margin-top: 16px; }
+  .mt-22 { margin-top: 22px; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .toast {
+    position: fixed; bottom: 18px; right: 18px; z-index: 100;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; box-shadow: var(--shadow); display: flex; align-items: center; gap: 10px;
+    transition: transform .25s ease, opacity .25s ease; opacity: 0; transform: translateY(8px);
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error { border-color: var(--red); }
+  .toast.success { border-color: var(--green); }
+
+  /* strategy grid */
+  .strategy-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  @media (max-width: 900px) { .strategy-grid { grid-template-columns: 1fr; } }
+  .strategy-card {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+    cursor: pointer; transition: transform .08s, border-color .15s;
+  }
+  .strategy-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .strategy-card .month { font-weight: 700; font-size: 15px; }
+  .strategy-card .goal { color: var(--muted); font-size: 12px; margin-top: 4px; min-height: 18px; }
+  .strategy-card .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; }
+  table.strategy-mini { width: 100%; }
+  table.strategy-mini th, table.strategy-mini td { padding: 5px 6px; font-size: 12px; border-bottom: 1px solid var(--border); }
+  table.strategy-mini th { font-size: 10px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  table.strategy-mini tr:last-child td { border-bottom: 0; }
+
+  /* mini chart wrapper */
+  .chart-wrap { position: relative; height: 280px; }
+  .chart-wrap.short { height: 220px; }
+
+  /* utility */
+  .hidden { display: none !important; }
+  .scroll-x { overflow-x: auto; }
+
+  /* role badge */
+  .role-badge {
+    background: var(--panel-2); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 999px; font-size: 12px; color: var(--muted);
+  }
+
+  /* table inline editor */
+  .tbl-editor td { padding: 6px 8px; vertical-align: middle; }
+  .cell-input {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    padding: 5px 7px; width: 100%; color: var(--text); font-size: 13px;
+    transition: border-color .12s, background .12s;
+  }
+  .cell-input:hover { border-color: var(--border); background: var(--bg-2); }
+  .cell-input:focus { border-color: var(--accent); background: var(--bg-2); outline: none; box-shadow: 0 0 0 3px rgba(91,141,239,0.18); }
+  .cell-num input { text-align: right; font-variant-numeric: tabular-nums; }
+  .good-cell { color: var(--green); font-weight: 600; }
+  .warn-cell { color: var(--yellow); font-weight: 600; }
+  .bad-cell  { color: var(--red);    font-weight: 600; }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+  .cell-fact-good { background: rgba(46,204,113,0.08); }
+  .cell-fact-warn { background: rgba(241,196,15,0.08); }
+  .cell-fact-bad  { background: rgba(231,76,60,0.08); }
+  code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body data-theme="dark">
+
+<!-- ============ LOGIN ============ -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="panel">
+      <div class="flex center gap-12" style="margin-bottom: 14px;">
+        <div class="brand-logo">Р+</div>
+        <div>
+          <div class="brand-title">Панель Р+</div>
+          <div class="brand-sub">Ежедневная отчетность канала</div>
+        </div>
+      </div>
+      <div class="field"><label>Логин</label><input id="loginUser" placeholder="admin" value="admin" /></div>
+      <div class="field mt-12"><label>Пароль</label><input id="loginPass" type="password" placeholder="••••••" value="demo" /></div>
+      <div class="field mt-12"><label>Роль</label>
+        <select id="loginRole">
+          <option value="admin">Администратор</option>
+          <option value="analyst">Аналитик</option>
+          <option value="viewer">Viewer</option>
+        </select>
+      </div>
+      <div class="flex between mt-16">
+        <button class="btn ghost btn-sm" onclick="toggleTheme()">Сменить тему</button>
+        <button class="btn" onclick="doLogin()">Войти</button>
+      </div>
+      <div class="hint mt-12">Демо-доступ: любой логин/пароль. Данные хранятся локально в браузере.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app" class="app hidden">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo">Р+</div>
+      <div>
+        <div class="brand-title">Панель Р+</div>
+        <div class="brand-sub">Аналитика канала</div>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="nav-item active" data-page="dashboard"><span class="nav-ico">▦</span> Дашборд</div>
+      <div class="nav-item" data-page="baseline"><span class="nav-ico">◐</span> Исходные данные</div>
+      <div class="nav-item" data-page="daily"><span class="nav-ico">✎</span> Ежедневный отчет</div>
+      <div class="nav-item" data-page="weekly"><span class="nav-ico">≡</span> Недельные сводки</div>
+      <div class="nav-item" data-page="monthly"><span class="nav-ico">▤</span> Месячные сводки</div>
+      <div class="nav-item" data-page="strategy"><span class="nav-ico">◎</span> Стратегия (24 мес)</div>
+      <div class="nav-item" data-page="analytics"><span class="nav-ico">⌬</span> Аналитика</div>
+      <div class="nav-item" data-page="settings"><span class="nav-ico">⚙</span> Настройки</div>
+    </nav>
+    <div class="mt-22 hint" style="padding: 0 8px;">v1.1 · Supabase<br/>Данные: Supabase + localStorage</div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title" id="pageTitle">Дашборд</div>
+      </div>
+      <div class="topbar-right">
+        <span class="role-badge" id="roleBadge">—</span>
+        <button class="btn ghost btn-sm" onclick="toggleTheme()" title="Переключить тему">☾ / ☀</button>
+        <button class="btn secondary btn-sm" onclick="doLogout()">Выйти</button>
+      </div>
+    </div>
+
+    <div class="content" id="content"><!-- pages inserted here --></div>
+  </main>
+</div>
+
+<!-- toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   DATA LAYER (localStorage)
+   ============================================================ */
+const STORAGE_KEYS = {
+  daily: 'rplus.daily.v1',     // { 'YYYY-MM-DD': {metric: {plan, fact, comment}} }
+  strategy: 'rplus.strategy.v1', // [{month: 'YYYY-MM', goal, kpi, planMembers, planActivity, planTables, status, comment}]
+  baseline: 'rplus.baseline.v1', // { channelName, channelLink, launchDate, owner, description, base: {metricId: number} }
+  history: 'rplus.history.v1',  // [{ts, user, date, metric, field, oldValue, newValue}]
+  session: 'rplus.session.v1',  // {user, role}
+  theme: 'rplus.theme.v1',
+  supabaseReports: 'rplus.supabase_reports.v1'
+};
+
+
+/* ============================================================
+   SUPABASE CONNECTION
+   ============================================================ */
+const SUPABASE_URL = "https://frmqhrjydcqsdvwjnqxe.supabase.co";
+const SUPABASE_ANON_KEY = "REPLACE_WITH_YOUR_SUPABASE_ANON_KEY";
+
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
+);
+
+console.log("Supabase подключен");
+
+const METRICS = [
+  { id: 'chat_members',     name: 'Участники чата',            desc: 'Общее число участников чата' },
+  { id: 'channel_members',  name: 'Участники канала',          desc: 'Общее число подписчиков канала' },
+  { id: 'new_members',      name: 'Новые участники',           desc: 'Прирост за день' },
+  { id: 'left_members',     name: 'Выбывшие',                  desc: 'Покинули канал/чат' },
+  { id: 'chat_posts',       name: 'Посты в чате',              desc: 'Сообщения за день' },
+  { id: 'registered_tables',name: 'Зарегистр. таблиц',         desc: 'Новые таблицы за день' }
+];
+
+const STATUS_LIST = ['В процессе', 'Выполнено', 'Просрочено'];
+
+// Метрики стратегии (план/факт по каждому месяцу)
+// daily   — id ежедневной метрики, из которой можно подтянуть факт автоматически
+// dailyMode — 'last' (последнее значение месяца) или 'sum' (сумма за месяц)
+const STRATEGY_METRICS = [
+  { id: 'channel_members',    name: 'Количество участников в канале',     daily: 'channel_members',    dailyMode: 'last' },
+  { id: 'chat_members',       name: 'Количество участников в чате',       daily: 'chat_members',       dailyMode: 'last' },
+  { id: 'registered_tables',  name: 'Количество зарегистрированных таблиц', daily: 'registered_tables', dailyMode: 'sum'  },
+  { id: 'subscription_price', name: 'Стоимость подписки',                 daily: null,                 dailyMode: null   }
+];
+function blankStrategyMetrics() {
+  const out = {};
+  STRATEGY_METRICS.forEach(m => { out[m.id] = { plan: 0, fact: 0 }; });
+  return out;
+}
+
+/* ---------- helpers ---------- */
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+function fmtNum(n) { if (n === null || n === undefined || n === '') return '—'; return Number(n).toLocaleString('ru-RU'); }
+function todayISO() { return new Date().toISOString().slice(0,10); }
+function pad(n) { return String(n).padStart(2,'0'); }
+function isoFromDate(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function dateFromISO(s) { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+function startOfWeek(d) { const x = new Date(d); const day = (x.getDay()+6)%7; x.setDate(x.getDate()-day); x.setHours(0,0,0,0); return x; }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function monthKey(d) { return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
+function monthLabel(ymStr) {
+  const [y,m] = ymStr.split('-').map(Number);
+  const months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  return `${months[m-1]} ${y}`;
+}
+function loadJSON(key, def) { try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch(e) { return def; } }
+function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
+
+/* ---------- history log ---------- */
+function recordHistory(entry) {
+  const log = loadJSON(STORAGE_KEYS.history, []);
+  const session = currentSession() || {};
+  log.push({
+    ts: new Date().toISOString(),
+    user: session.user || 'anonymous',
+    ...entry
+  });
+  if (log.length > 1000) log.splice(0, log.length - 1000);
+  saveJSON(STORAGE_KEYS.history, log);
+}
+
+/* ---------- global modal helper ---------- */
+function showModal(html) {
+  let h = document.getElementById('globalModalHolder');
+  if (!h) {
+    h = document.createElement('div');
+    h.id = 'globalModalHolder';
+    document.body.appendChild(h);
+  }
+  h.innerHTML = html;
+}
+function closeModal() { const h = document.getElementById('globalModalHolder'); if (h) h.innerHTML = ''; }
+
+/* ---------- toast ---------- */
+let toastTimer = null;
+function toast(msg, type='success') {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.remove('success','error');
+  el.classList.add(type);
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+/* ---------- session / login ---------- */
+function doLogin() {
+  const user = $('#loginUser').value.trim() || 'user';
+  const role = $('#loginRole').value;
+  saveJSON(STORAGE_KEYS.session, { user, role });
+  ensureSeed();
+  renderApp();
+}
+function doLogout() {
+  localStorage.removeItem(STORAGE_KEYS.session);
+  $('#app').classList.add('hidden');
+  $('#loginScreen').classList.remove('hidden');
+}
+function currentSession() { return loadJSON(STORAGE_KEYS.session, null); }
+function isViewer() { const s = currentSession(); return s && s.role === 'viewer'; }
+function isAdmin() { const s = currentSession(); return s && s.role === 'admin'; }
+
+/* ---------- theme ---------- */
+function toggleTheme() {
+  const cur = document.body.getAttribute('data-theme') || 'dark';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.body.setAttribute('data-theme', next);
+  saveJSON(STORAGE_KEYS.theme, next);
+  // re-render charts to pick new colors
+  if (currentPage) renderPage(currentPage);
+}
+(function initTheme() {
+  const t = loadJSON(STORAGE_KEYS.theme, 'dark');
+  document.body.setAttribute('data-theme', t);
+})();
+
+/* ============================================================
+   INIT / MIGRATION — никаких демо-данных
+   Точка отсчёта берётся из «Исходные данные» → базовые значения
+   ============================================================ */
+function ensureSeed() {
+  // ONE-TIME: очистка ранее сгенерированных демо-данных
+  const MIG = 'rplus.migration.no_demo_v1';
+  if (!localStorage.getItem(MIG)) {
+    localStorage.removeItem(STORAGE_KEYS.daily);
+    localStorage.removeItem(STORAGE_KEYS.strategy);
+    localStorage.removeItem(STORAGE_KEYS.history);
+    localStorage.setItem(MIG, '1');
+  }
+
+  // Пустое ежедневное хранилище
+  if (loadJSON(STORAGE_KEYS.daily, null) === null) {
+    saveJSON(STORAGE_KEYS.daily, {});
+  }
+
+  // Стратегия: пустые 24 месяца от текущего месяца (новая структура с метриками план/факт)
+  let strategy = loadJSON(STORAGE_KEYS.strategy, null);
+  if (strategy === null) {
+    strategy = [];
+    const start = new Date(); start.setDate(1);
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth()+i, 1);
+      strategy.push({
+        month: monthKey(d),
+        goal: '', kpi: '',
+        metrics: blankStrategyMetrics(),
+        status: 'В процессе', comment: ''
+      });
+    }
+    saveJSON(STORAGE_KEYS.strategy, strategy);
+  } else if (Array.isArray(strategy) && strategy.length && !strategy[0].metrics) {
+    // миграция старой структуры (planMembers/planActivity/planTables → metrics{plan,fact})
+    strategy = strategy.map(s => ({
+      month: s.month,
+      goal: s.goal || '',
+      kpi: s.kpi || '',
+      metrics: {
+        channel_members:    { plan: Number(s.planMembers)  || 0, fact: 0 },
+        chat_members:       { plan: Number(s.planActivity) || 0, fact: 0 },
+        registered_tables:  { plan: Number(s.planTables)   || 0, fact: 0 },
+        subscription_price: { plan: 0, fact: 0 }
+      },
+      status: s.status || 'В процессе',
+      comment: s.comment || ''
+    }));
+    saveJSON(STORAGE_KEYS.strategy, strategy);
+  }
+
+  // Базовые значения: создаём пустой контейнер
+  if (loadJSON(STORAGE_KEYS.baseline, null) === null) {
+    saveJSON(STORAGE_KEYS.baseline, {
+      channelName: 'Р+', channelLink: '', launchDate: '', owner: '', description: '', base: {}
+    });
+  }
+}
+
+/* Проверка наличия данных вообще */
+function hasAnyDailyData() {
+  const all = loadJSON(STORAGE_KEYS.daily, {});
+  return Object.keys(all).length > 0;
+}
+function hasBaselineValues() {
+  const b = loadJSON(STORAGE_KEYS.baseline, null);
+  if (!b || !b.base) return false;
+  return Object.values(b.base).some(v => v != null && v !== '');
+}
+
+
+/* ============================================================
+   SUPABASE DAILY REPORTS SYNC
+   Загружает строки из таблицы daily_reports и перекладывает их
+   в структуру dashboard: localStorage rplus.daily.v1.
+   ============================================================ */
+function extractNumber(text, patterns) {
+  if (!text) return null;
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1] !== undefined) {
+      const raw = String(match[1]).replace(/\s/g, '').replace(',', '.');
+      const n = Number(raw);
+      if (!Number.isNaN(n)) return n;
+    }
+  }
+  return null;
+}
+
+function parseFullReportToMetrics(fullReport) {
+  const text = String(fullReport || '');
+  return {
+    chat_members: extractNumber(text, [
+      /участник(?:и|ов)?\s+чата[^0-9-]*([0-9\s.,]+)/i,
+      /чат[^0-9-]*(?:участник(?:и|ов)?)?[^0-9-]*([0-9\s.,]+)/i
+    ]),
+    channel_members: extractNumber(text, [
+      /участник(?:и|ов)?\s+канала[^0-9-]*([0-9\s.,]+)/i,
+      /подписчик(?:и|ов)?[^0-9-]*([0-9\s.,]+)/i,
+      /канал[^0-9-]*(?:участник(?:и|ов)?|подписчик(?:и|ов)?)?[^0-9-]*([0-9\s.,]+)/i
+    ]),
+    new_members: extractNumber(text, [
+      /нов(?:ые|ых)?\s+участник(?:и|ов)?[^0-9-]*([0-9\s.,]+)/i,
+      /прирост[^0-9-]*([0-9\s.,]+)/i
+    ]),
+    left_members: extractNumber(text, [
+      /выбывш(?:ие|их)?[^0-9-]*([0-9\s.,]+)/i,
+      /покинул(?:и|о)?[^0-9-]*([0-9\s.,]+)/i,
+      /отпис(?:ки|ались|алось)[^0-9-]*([0-9\s.,]+)/i
+    ]),
+    chat_posts: extractNumber(text, [
+      /пост(?:ы|ов)?\s+в\s+чате[^0-9-]*([0-9\s.,]+)/i,
+      /сообщени(?:я|й)?[^0-9-]*([0-9\s.,]+)/i
+    ]),
+    registered_tables: extractNumber(text, [
+      /зарегистр(?:ированных|ировано|\.?)\s+таблиц[^0-9-]*([0-9\s.,]+)/i,
+      /таблиц(?:ы)?[^0-9-]*([0-9\s.,]+)/i
+    ])
+  };
+}
+
+async function loadSupabaseDailyReports() {
+  try {
+    if (!supabaseClient || SUPABASE_ANON_KEY === 'REPLACE_WITH_YOUR_SUPABASE_ANON_KEY') {
+      console.warn('Supabase anon key не задан. Вставьте ключ в SUPABASE_ANON_KEY.');
+      return;
+    }
+
+    const { data, error } = await supabaseClient
+      .from('daily_reports')
+      .select('report_date, full_report, created_at')
+      .order('report_date', { ascending: false });
+
+    if (error) {
+      console.error('Ошибка загрузки daily_reports из Supabase:', error);
+      toast('Ошибка загрузки Supabase', 'error');
+      return;
+    }
+
+    saveJSON(STORAGE_KEYS.supabaseReports, data || []);
+
+    const all = loadJSON(STORAGE_KEYS.daily, {});
+    (data || []).forEach(report => {
+      const date = report.report_date;
+      if (!date) return;
+      if (!all[date]) all[date] = {};
+      const parsed = parseFullReportToMetrics(report.full_report);
+
+      Object.entries(parsed).forEach(([metricId, fact]) => {
+        if (fact === null || fact === undefined) return;
+        const prev = all[date][metricId] || {};
+        all[date][metricId] = {
+          ...prev,
+          fact,
+          comment: prev.comment || 'Из Supabase daily_reports'
+        };
+      });
+
+      all[date].full_report = {
+        plan: null,
+        fact: null,
+        comment: report.full_report || ''
+      };
+    });
+
+    saveJSON(STORAGE_KEYS.daily, all);
+    console.log('Supabase daily_reports загружены:', data);
+  } catch (e) {
+    console.error('Непредвиденная ошибка Supabase:', e);
+  }
+}
+
+function latestDailyDate() {
+  const all = loadJSON(STORAGE_KEYS.daily, {});
+  const dates = Object.keys(all).filter(Boolean).sort();
+  return dates.length ? dates[dates.length - 1] : todayISO();
+}
+
+function renderSupabaseReportsPreview(limit = 5) {
+  const reports = loadJSON(STORAGE_KEYS.supabaseReports, []);
+  const rows = reports.slice(0, limit).map(r => `
+    <tr>
+      <td>${escapeHtml(r.report_date || '')}</td>
+      <td>${escapeHtml(String(r.full_report || '')).slice(0, 240)}${String(r.full_report || '').length > 240 ? '…' : ''}</td>
+      <td>${escapeHtml(r.created_at || '')}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="panel mt-22">
+      <div class="flex between center">
+        <h3 style="margin:0;">Последние отчёты из Supabase</h3>
+        <button class="btn ghost btn-sm" onclick="loadSupabaseDailyReports().then(()=>renderPage(currentPage))">Обновить</button>
+      </div>
+      <div class="hint mt-12">Источник: таблица <code>daily_reports</code>. Если в тексте отчёта есть числовые метрики, dashboard пробует автоматически перенести их в KPI.</div>
+      <div class="scroll-x mt-12">
+        <table class="tbl">
+          <thead><tr><th>Дата</th><th>Отчёт</th><th>Создан</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="3" class="hint" style="text-align:center;padding:14px;">Отчётов из Supabase пока нет</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+/* ============================================================
+   STATUS / CALCULATIONS
+   ============================================================ */
+function statusFor(plan, fact, opts={}) {
+  // higher is better unless metric is "left_members"
+  const lowerIsBetter = !!opts.lowerIsBetter;
+  if (!plan || plan <= 0) return { cls: 'gray', pct: null, label: '—' };
+  const ratio = fact / plan;
+  const pct = Math.round(ratio * 100);
+  let cls;
+  if (lowerIsBetter) {
+    if (ratio <= 1.0) cls = 'green';
+    else if (ratio <= 1.15) cls = 'yellow';
+    else cls = 'red';
+  } else {
+    if (ratio >= 0.97) cls = 'green';
+    else if (ratio >= 0.85) cls = 'yellow';
+    else cls = 'red';
+  }
+  return { cls, pct, label: `${pct}%` };
+}
+function isLowerBetter(id) { return id === 'left_members'; }
+function metricVariance(plan, fact) {
+  if (plan === '' || plan === null || plan === undefined) return null;
+  if (fact === '' || fact === null || fact === undefined) return null;
+  return Number(fact) - Number(plan);
+}
+
+/* ============================================================
+   ROUTING
+   ============================================================ */
+let currentPage = 'dashboard';
+let chartInstances = {};
+function destroyCharts() {
+  Object.values(chartInstances).forEach(c => { try { c.destroy(); } catch(e){} });
+  chartInstances = {};
+}
+function setActiveNav(page) {
+  $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
+}
+function renderApp() {
+  $('#loginScreen').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  const s = currentSession();
+  $('#roleBadge').textContent = `${s.user} · ${s.role === 'admin' ? 'Администратор' : s.role === 'analyst' ? 'Аналитик' : 'Viewer'}`;
+  renderPage('dashboard');
+  loadSupabaseDailyReports().then(() => renderPage(currentPage));
+}
+function renderPage(page) {
+  destroyCharts();
+  currentPage = page;
+  setActiveNav(page);
+  const titles = {
+    dashboard: 'Дашборд',
+    baseline: 'Исходные данные',
+    daily: 'Ежедневный отчет',
+    weekly: 'Недельные сводки',
+    monthly: 'Месячные сводки',
+    strategy: 'Стратегия развития · 24 месяца',
+    analytics: 'Аналитика',
+    settings: 'Настройки'
+  };
+  $('#pageTitle').textContent = titles[page] || '';
+  const c = $('#content');
+  if (page === 'dashboard') c.innerHTML = viewDashboard();
+  else if (page === 'baseline') c.innerHTML = viewBaseline();
+  else if (page === 'daily') c.innerHTML = viewDaily();
+  else if (page === 'weekly') c.innerHTML = viewWeekly();
+  else if (page === 'monthly') c.innerHTML = viewMonthly();
+  else if (page === 'strategy') c.innerHTML = viewStrategy();
+  else if (page === 'analytics') c.innerHTML = viewAnalytics();
+  else if (page === 'settings') c.innerHTML = viewSettings();
+  // run post-render hooks
+  if (page === 'dashboard') postDashboard();
+  if (page === 'baseline') postBaseline();
+  if (page === 'daily') postDaily();
+  if (page === 'weekly') postWeekly();
+  if (page === 'monthly') postMonthly();
+  if (page === 'strategy') postStrategy();
+  if (page === 'analytics') postAnalytics();
+}
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+function getDay(key) {
+  const all = loadJSON(STORAGE_KEYS.daily, {});
+  return all[key] || null;
+}
+function getLastNDays(n, endDate=new Date()) {
+  const out = [];
+  for (let i = n-1; i >= 0; i--) {
+    const d = addDays(endDate, -i);
+    const key = isoFromDate(d);
+    out.push({ date: key, data: getDay(key) });
+  }
+  return out;
+}
+function viewDashboard() {
+  const today = todayISO();
+  const day = getDay(latestDailyDate()) || getDay(today) || getDay(isoFromDate(addDays(new Date(), -1))) || {};
+  const baseline = getBaseline();
+  const noDaily = !hasAnyDailyData();
+  const noBase = !hasBaselineValues();
+
+  let kpis = METRICS.map(m => {
+    const v = day[m.id] || {};
+    const baseVal = baseline.base?.[m.id];
+    // если фактических данных нет — показываем базовое значение как точку отсчёта
+    const usingBase = (v.fact == null) && baseVal != null;
+    const factShown = usingBase ? baseVal : v.fact;
+    const st = statusFor(v.plan, v.fact, { lowerIsBetter: isLowerBetter(m.id) });
+    return `
+      <div class="kpi status-${st.cls}">
+        <div class="label">${m.name}${usingBase ? ' <span class="pill gray">база</span>' : ''}</div>
+        <div class="value">${fmtNum(factShown)}</div>
+        <div class="delta">
+          <span class="hint">${usingBase ? 'Стартовое значение' : 'План: ' + fmtNum(v.plan)}</span>
+          ${!usingBase ? `<span class="pct">${st.label}</span>` : ''}
+        </div>
+        <div class="bar"><span style="width:${st.pct ? Math.min(100, st.pct) : 0}%"></span></div>
+      </div>`;
+  }).join('');
+
+  const emptyBanner = (noDaily && noBase) ? `
+    <div class="panel" style="border-left: 3px solid var(--accent);">
+      <h3 style="margin:0;">Начните с исходных данных</h3>
+      <div class="hint mt-12">
+        Демо-данных нет. Чтобы начать вести отчётность, перейдите в раздел <b>Исходные данные</b>:
+        задайте параметры канала, введите базовые (стартовые) значения метрик — они станут точкой отсчёта.
+        Затем заполняйте ежедневный отчёт.
+      </div>
+      <div class="row-actions mt-12">
+        <button class="btn" onclick="renderPage('baseline')">Перейти к «Исходные данные»</button>
+        <button class="btn secondary btn-sm" onclick="renderPage('daily')">К ежедневному отчёту</button>
+      </div>
+    </div>
+  ` : (noDaily ? `
+    <div class="panel" style="border-left: 3px solid var(--accent);">
+      <h3 style="margin:0;">Ежедневных данных пока нет</h3>
+      <div class="hint mt-12">Базовые значения заданы и используются как точка отсчёта. Перейдите в «Ежедневный отчёт», чтобы начать вносить план и факт.</div>
+      <div class="row-actions mt-12">
+        <button class="btn" onclick="renderPage('daily')">К ежедневному отчёту</button>
+      </div>
+    </div>
+  ` : '');
+
+  return `
+    ${emptyBanner}
+    <div class="row cols-6 ${emptyBanner ? 'mt-22' : ''}">${kpis}</div>
+
+    <div class="row cols-2 mt-22">
+      <div class="panel">
+        <h3>Динамика участников канала (30 дней)</h3>
+        <div class="chart-wrap"><canvas id="chDashLine"></canvas></div>
+      </div>
+      <div class="panel">
+        <h3>План vs Факт · сегодня</h3>
+        <div class="chart-wrap"><canvas id="chDashBar"></canvas></div>
+      </div>
+    </div>
+
+    <div class="panel mt-22">
+      <div class="flex between center">
+        <h3 style="margin:0;">Последние 7 дней</h3>
+        <div class="hint">Зеленая зона: факт ≥ 97% плана</div>
+      </div>
+      <div class="scroll-x mt-12">
+        ${tableRecent(7)}
+      </div>
+    </div>
+
+    ${renderSupabaseReportsPreview(5)}
+  `;
+}
+function tableRecent(n) {
+  const days = getLastNDays(n).reverse();
+  const header = METRICS.map(m => `<th class="num">${m.name}</th>`).join('');
+  const rows = days.map(d => {
+    if (!d.data) return `<tr><td>${d.date}</td>${METRICS.map(_=>'<td class="num">—</td>').join('')}</tr>`;
+    const cells = METRICS.map(m => {
+      const v = d.data[m.id] || {};
+      const st = statusFor(v.plan, v.fact, { lowerIsBetter: isLowerBetter(m.id) });
+      return `<td class="num">${fmtNum(v.fact)} <span class="pill ${st.cls}">${st.label}</span></td>`;
+    }).join('');
+    return `<tr><td>${d.date}</td>${cells}</tr>`;
+  }).join('');
+  return `<table class="tbl"><thead><tr><th>Дата</th>${header}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+function postDashboard() {
+  const days = getLastNDays(30);
+  const labels = days.map(d => d.date.slice(5));
+  const chan = days.map(d => d.data?.channel_members?.fact ?? null);
+  const chat = days.map(d => d.data?.chat_members?.fact ?? null);
+  const chanPlan = days.map(d => d.data?.channel_members?.plan ?? null);
+
+  const palette = chartPalette();
+  chartInstances.dashLine = new Chart($('#chDashLine'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Канал (факт)', data: chan, borderColor: palette.accent, backgroundColor: palette.accent+'33', tension: .3, fill: true, pointRadius: 0 },
+        { label: 'Канал (план)', data: chanPlan, borderColor: palette.muted, borderDash: [5,5], tension: .3, pointRadius: 0, fill: false },
+        { label: 'Чат (факт)',   data: chat, borderColor: palette.accent2, backgroundColor: palette.accent2+'22', tension: .3, fill: false, pointRadius: 0 }
+      ]
+    },
+    options: chartCommon()
+  });
+
+  const today = getDay(todayISO()) || getDay(isoFromDate(addDays(new Date(), -1))) || {};
+  const lbls = METRICS.map(m => m.name);
+  const plans = METRICS.map(m => today[m.id]?.plan ?? 0);
+  const facts = METRICS.map(m => today[m.id]?.fact ?? 0);
+  chartInstances.dashBar = new Chart($('#chDashBar'), {
+    type: 'bar',
+    data: {
+      labels: lbls,
+      datasets: [
+        { label: 'План', data: plans, backgroundColor: palette.muted+'88' },
+        { label: 'Факт', data: facts, backgroundColor: palette.accent }
+      ]
+    },
+    options: chartCommon()
+  });
+}
+
+/* ---------- chart common ---------- */
+function chartPalette() {
+  const dark = (document.body.getAttribute('data-theme') === 'dark');
+  return {
+    text: dark ? '#e7ecf3' : '#0f1421',
+    muted: dark ? '#8a93a6' : '#5b6577',
+    grid: dark ? 'rgba(255,255,255,0.06)' : 'rgba(15,20,33,0.07)',
+    accent: dark ? '#5b8def' : '#2f6fed',
+    accent2: dark ? '#7c5cff' : '#6e4cff',
+    green: dark ? '#2ecc71' : '#18a957',
+    yellow: dark ? '#f1c40f' : '#d49a00',
+    red: dark ? '#e74c3c' : '#d6402b'
+  };
+}
+function chartCommon() {
+  const p = chartPalette();
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: p.text, boxWidth: 12 } },
+      tooltip: { backgroundColor: 'rgba(0,0,0,.8)' }
+    },
+    scales: {
+      x: { ticks: { color: p.muted }, grid: { color: p.grid } },
+      y: { ticks: { color: p.muted }, grid: { color: p.grid } }
+    }
+  };
+}
+
+/* ============================================================
+   BASELINE — исходные данные канала, базовые значения, импорт
+   ============================================================ */
+function getBaseline() {
+  return loadJSON(STORAGE_KEYS.baseline, {
+    channelName: 'Р+', channelLink: '', launchDate: '', owner: '', description: '', base: {}
+  });
+}
+function viewBaseline() {
+  const b = getBaseline();
+  const canEdit = !isViewer();
+  const dis = canEdit ? '' : 'disabled';
+  const baseRows = METRICS.map(m => {
+    const val = b.base?.[m.id] ?? '';
+    return `
+      <div class="metric-row" style="grid-template-columns: 1.4fr 1fr 2fr;" data-bl-metric="${m.id}">
+        <div class="metric-name">${m.name}<small>${m.desc}</small></div>
+        <div class="field"><label>Стартовое значение</label><input type="number" class="bl-base" value="${val}" ${dis} /></div>
+        <div class="field"><label>Назначение</label><span class="hint">Точка отсчёта на старте учёта канала</span></div>
+      </div>
+    `;
+  }).join('');
+  const metricOpts = METRICS.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+
+  return `
+    <div class="panel">
+      <h3>Параметры канала</h3>
+      <div class="hint">Контекст канала: название, ссылка, дата запуска, ответственный. Используется в отчётах и прогнозах.</div>
+      <div class="row cols-2 mt-12">
+        <div class="field"><label>Название канала</label><input id="bl_name" value="${escapeHtml(b.channelName||'')}" ${dis} /></div>
+        <div class="field"><label>Ссылка</label><input id="bl_link" value="${escapeHtml(b.channelLink||'')}" placeholder="https://t.me/..." ${dis} /></div>
+      </div>
+      <div class="row cols-2 mt-12">
+        <div class="field"><label>Дата запуска</label><input id="bl_launch" type="date" value="${b.launchDate||''}" ${dis} /></div>
+        <div class="field"><label>Ответственный</label><input id="bl_owner" value="${escapeHtml(b.owner||'')}" ${dis} /></div>
+      </div>
+      <div class="field mt-12"><label>Описание</label><textarea id="bl_desc" rows="2" ${dis}>${escapeHtml(b.description||'')}</textarea></div>
+      <div class="flex between mt-12">
+        <div class="hint">Параметры сохраняются вручную.</div>
+        ${canEdit ? '<button class="btn" onclick="saveBaselineMeta()">Сохранить параметры</button>' : ''}
+      </div>
+    </div>
+
+    <div class="panel mt-22">
+      <h3>Базовые значения метрик</h3>
+      <div class="hint">Начальные значения на момент запуска канала. Используются как точка отсчёта для динамики и прогнозов.</div>
+      <div class="mt-12">${baseRows}</div>
+      ${canEdit ? '<button class="btn mt-12" onclick="saveBaselineValues()">Сохранить базовые значения</button>' : ''}
+    </div>
+
+    <div class="panel mt-22">
+      <h3>Массовое заполнение плана</h3>
+      <div class="hint">Заполнить плановые значения для одной метрики на диапазон дат — на неделю или месяц вперёд.</div>
+      <div class="row cols-4 mt-12">
+        <div class="field"><label>Метрика</label><select id="bp_metric" ${dis}>${metricOpts}</select></div>
+        <div class="field"><label>С</label><input type="date" id="bp_start" value="${todayISO()}" ${dis} /></div>
+        <div class="field"><label>По</label><input type="date" id="bp_end" value="${isoFromDate(addDays(new Date(), 6))}" ${dis} /></div>
+        <div class="field"><label>Значение</label><input type="number" id="bp_val" placeholder="например, 1000" ${dis} /></div>
+      </div>
+      <div class="row-actions mt-12">
+        ${canEdit ? `
+          <button class="btn" onclick="applyBulkPlan('value')">Заполнить значением</button>
+          <button class="btn secondary" onclick="applyBulkPlan('linear')">Линейный рост к значению</button>
+          <button class="btn ghost" onclick="applyBulkPlan('clear')">Очистить план</button>
+          <button class="btn ghost btn-sm" onclick="setBulkRange(7)">+7 дней</button>
+          <button class="btn ghost btn-sm" onclick="setBulkRange(30)">+30 дней</button>
+        ` : '<span class="pill gray">Только просмотр</span>'}
+      </div>
+    </div>
+
+    <div class="panel mt-22">
+      <h3>Импорт CSV</h3>
+      <div class="hint">Формат строк: <code>date,metric,plan,fact,comment</code>. Заголовок опционален. Существующие значения перезаписываются.</div>
+      <textarea id="csvInput" rows="6" style="width:100%;font-family:monospace;font-size:12px;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:8px;color:var(--text);" placeholder="2026-05-11,chat_members,1000,980,комментарий&#10;2026-05-11,channel_members,5000,5120," ${dis}></textarea>
+      <div class="row-actions mt-12">
+        ${canEdit ? `
+          <button class="btn" onclick="importCSV()">Импортировать из поля</button>
+          <label class="btn secondary" style="cursor:pointer;">
+            Загрузить файл CSV
+            <input type="file" accept=".csv,text/csv" style="display:none" onchange="importCSVFile(event)" />
+          </label>
+          <button class="btn ghost btn-sm" onclick="copyCSVTemplate()">Скопировать шаблон</button>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+function postBaseline() { /* no-op */ }
+function saveBaselineMeta() {
+  if (isViewer()) return;
+  const cur = getBaseline();
+  saveJSON(STORAGE_KEYS.baseline, {
+    ...cur,
+    channelName: $('#bl_name').value,
+    channelLink: $('#bl_link').value,
+    launchDate: $('#bl_launch').value,
+    owner: $('#bl_owner').value,
+    description: $('#bl_desc').value
+  });
+  toast('Параметры сохранены');
+}
+function saveBaselineValues() {
+  if (isViewer()) return;
+  const cur = getBaseline();
+  cur.base = cur.base || {};
+  $$('#content [data-bl-metric]').forEach(row => {
+    const id = row.dataset.blMetric;
+    const v = row.querySelector('.bl-base').value;
+    cur.base[id] = v === '' ? null : Number(v);
+  });
+  saveJSON(STORAGE_KEYS.baseline, cur);
+  toast('Базовые значения сохранены');
+}
+function setBulkRange(days) {
+  $('#bp_start').value = todayISO();
+  $('#bp_end').value = isoFromDate(addDays(new Date(), days-1));
+}
+function applyBulkPlan(mode) {
+  if (isViewer()) return;
+  const metric = $('#bp_metric').value;
+  const start = $('#bp_start').value;
+  const end = $('#bp_end').value;
+  const val = $('#bp_val').value === '' ? null : Number($('#bp_val').value);
+  if (!start || !end) { toast('Выберите диапазон дат', 'error'); return; }
+  if (mode !== 'clear' && val == null) { toast('Введите значение плана', 'error'); return; }
+  const sD = dateFromISO(start), eD = dateFromISO(end);
+  if (eD < sD) { toast('Дата окончания раньше начала', 'error'); return; }
+  const dates = [];
+  let cur = new Date(sD);
+  while (cur <= eD) { dates.push(isoFromDate(cur)); cur = addDays(cur, 1); }
+  if (!confirm(`Применить ко всем ${dates.length} дням?`)) return;
+  const all = loadJSON(STORAGE_KEYS.daily, {});
+  let touched = 0;
+  if (mode === 'linear') {
+    const firstPlan = all[dates[0]]?.[metric]?.plan ?? 0;
+    dates.forEach((d, i) => {
+      if (!all[d]) all[d] = {};
+      const cell = all[d][metric] || {};
+      const prev = cell.plan ?? null;
+      const ratio = dates.length === 1 ? 1 : i/(dates.length-1);
+      const v = Math.round(firstPlan + (val - firstPlan) * ratio);
+      cell.plan = v;
+      all[d][metric] = cell;
+      if (prev !== v) { recordHistory({ date: d, metric, field: 'plan', oldValue: prev, newValue: v, bulk: true }); touched++; }
+    });
+  } else if (mode === 'clear') {
+    dates.forEach(d => {
+      const cell = all[d]?.[metric];
+      if (cell && cell.plan != null) {
+        const prev = cell.plan;
+        cell.plan = null;
+        recordHistory({ date: d, metric, field: 'plan', oldValue: prev, newValue: null, bulk: true });
+        touched++;
+      }
+    });
+  } else {
+    dates.forEach(d => {
+      if (!all[d]) all[d] = {};
+      const cell = all[d][metric] || {};
+      const prev = cell.plan ?? null;
+      cell.plan = val;
+      all[d][metric] = cell;
+      if (prev !== val) { recordHistory({ date: d, metric, field: 'plan', oldValue: prev, newValue: val, bulk: true }); touched++; }
+    });
+  }
+  saveJSON(STORAGE_KEYS.daily, all);
+  toast(`Обновлено: ${touched} из ${dates.length} дней`);
+}
+function importCSV() {
+  if (isViewer()) return;
+  const text = $('#csvInput').value.trim();
+  if (!text) { toast('Поле пустое', 'error'); return; }
+  processCSV(text);
+}
+function importCSVFile(ev) {
+  if (isViewer()) return;
+  const f = ev.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = e => processCSV(e.target.result);
+  r.readAsText(f);
+}
+function processCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  let imported = 0, skipped = 0;
+  const all = loadJSON(STORAGE_KEYS.daily, {});
+  lines.forEach((line, idx) => {
+    if (idx === 0 && /^date/i.test(line)) return;
+    const parts = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
+    const [date, metric, plan, fact, comment] = parts;
+    if (!date || !metric || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !METRICS.find(m => m.id === metric)) { skipped++; return; }
+    if (!all[date]) all[date] = {};
+    const prev = all[date][metric] || {};
+    const next = {
+      plan: plan === '' || plan == null ? prev.plan ?? null : Number(plan),
+      fact: fact === '' || fact == null ? prev.fact ?? null : Number(fact),
+      comment: comment ?? prev.comment ?? ''
+    };
+    ['plan','fact','comment'].forEach(f => {
+      if ((prev[f] ?? null) !== (next[f] ?? null)) {
+        recordHistory({ date, metric, field: f, oldValue: prev[f] ?? null, newValue: next[f] ?? null, source: 'csv' });
+      }
+    });
+    all[date][metric] = next;
+    imported++;
+  });
+  saveJSON(STORAGE_KEYS.daily, all);
+  toast(`Импортировано: ${imported}, пропущено: ${skipped}`);
+}
+function copyCSVTemplate() {
+  const tpl = 'date,metric,plan,fact,comment\n' +
+    METRICS.map(m => `${todayISO()},${m.id},,,`).join('\n');
+  $('#csvInput').value = tpl;
+  toast('Шаблон вставлен в поле');
+}
+
+/* ============================================================
+   DAILY — табличный inline-редактор
+   ============================================================ */
+let dailyRange = null;
+let dailyMetric = null;
+
+function viewDaily() {
+  if (!dailyRange) {
+    const end = todayISO();
+    const start = isoFromDate(addDays(new Date(), -13));
+    dailyRange = { start, end };
+  }
+  if (!dailyMetric) dailyMetric = METRICS[0].id;
+
+  // collect dates desc
+  const dates = [];
+  let cur = dateFromISO(dailyRange.start);
+  const endD = dateFromISO(dailyRange.end);
+  while (cur <= endD) { dates.push(isoFromDate(cur)); cur = addDays(cur, 1); }
+  dates.reverse();
+
+  const disabled = isViewer() ? 'disabled' : '';
+  const all = loadJSON(STORAGE_KEYS.daily, {});
+  const mObj = METRICS.find(m => m.id === dailyMetric);
+
+  const rows = dates.map(date => {
+    const day = all[date] || {};
+    const v = day[dailyMetric] || {};
+    const plan = v.plan, fact = v.fact;
+    const dev = (plan != null && fact != null) ? (Number(fact) - Number(plan)) : null;
+    const pct = (plan && plan > 0 && fact != null) ? Math.round((Number(fact) / Number(plan)) * 100) : null;
+    const lowerBetter = isLowerBetter(dailyMetric);
+    let pctCls = '';
+    if (pct != null) {
+      const ratio = pct / 100;
+      if (lowerBetter) pctCls = ratio <= 1 ? 'good-cell' : ratio <= 1.15 ? 'warn-cell' : 'bad-cell';
+      else pctCls = ratio >= 0.97 ? 'good-cell' : ratio >= 0.85 ? 'warn-cell' : 'bad-cell';
+    }
+    const factBg = pctCls ? ('cell-fact-' + pctCls.replace('-cell','').replace('good','good').replace('warn','warn').replace('bad','bad')) : '';
+    const isToday = date === todayISO();
+    return `
+      <tr data-date="${date}">
+        <td><b>${date}</b>${isToday ? ' <span class="pill green">сегодня</span>' : ''}</td>
+        <td class="num cell-num"><input class="cell-input tbl-plan" type="number" value="${plan ?? ''}" ${disabled} /></td>
+        <td class="num cell-num ${factBg}"><input class="cell-input tbl-fact" type="number" value="${fact ?? ''}" ${disabled} /></td>
+        <td class="num cell-dev ${dev == null ? '' : dev >= 0 ? 'pos' : 'neg'}">${dev == null ? '—' : (dev >= 0 ? '+' : '') + fmtNum(dev)}</td>
+        <td class="num cell-pct ${pctCls}">${pct == null ? '—' : pct + '%'}</td>
+        <td><input class="cell-input tbl-comment" value="${escapeHtml(v.comment||'')}" placeholder="—" ${disabled} /></td>
+        <td>
+          <div class="row-actions">
+            <button class="btn ghost btn-sm" onclick="openDayCard('${date}')" title="Все метрики за день">▤</button>
+            ${isViewer() ? '' : `<button class="btn ghost btn-sm" onclick="deleteDayConfirm('${date}')" title="Удалить день" style="color:var(--red);">✕</button>`}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  const metricOpts = METRICS.map(m => `<option value="${m.id}" ${m.id===dailyMetric?'selected':''}>${m.name}</option>`).join('');
+  return `
+    <div class="panel">
+      <div class="flex between center" style="flex-wrap:wrap;gap:12px;">
+        <div class="flex gap-12 center" style="flex-wrap:wrap;">
+          <div class="field" style="min-width:180px;"><label>Метрика</label><select id="dailyMetricSel" onchange="onDailyMetricChange(this.value)">${metricOpts}</select></div>
+          <div class="field" style="min-width:140px;"><label>С</label><input type="date" id="dailyStart" value="${dailyRange.start}" onchange="onDailyRangeChange()" /></div>
+          <div class="field" style="min-width:140px;"><label>По</label><input type="date" id="dailyEnd" value="${dailyRange.end}" onchange="onDailyRangeChange()" /></div>
+          <div class="row-actions" style="align-self:flex-end;">
+            <button class="btn ghost btn-sm" onclick="setDailyRange(7)">7 дн</button>
+            <button class="btn ghost btn-sm" onclick="setDailyRange(14)">14 дн</button>
+            <button class="btn ghost btn-sm" onclick="setDailyRange(30)">30 дн</button>
+          </div>
+        </div>
+        <div class="row-actions">
+          ${isViewer() ? '<span class="pill gray">Только просмотр</span>' : `
+            <button class="btn secondary btn-sm" onclick="addDayPrompt()">+ Добавить день</button>
+            <button class="btn ghost btn-sm" onclick="exportDailyCSV()">Экспорт CSV</button>
+          `}
+        </div>
+      </div>
+      <div class="hint mt-12">
+        Inline-редактор · автосохранение · отклонение = факт − план · % = факт/план × 100% · цветовая индикация выполнения.
+        Текущая метрика: <b>${mObj?.name || dailyMetric}</b>${isLowerBetter(dailyMetric) ? ' (меньше — лучше)' : ''}.
+      </div>
+
+      <div class="scroll-x mt-12">
+        <table class="tbl tbl-editor">
+          <thead><tr>
+            <th>Дата</th>
+            <th class="num" style="width:120px;">План</th>
+            <th class="num" style="width:120px;">Факт</th>
+            <th class="num" style="width:110px;">Отклонение</th>
+            <th class="num" style="width:110px;">% плана</th>
+            <th>Комментарий</th>
+            <th style="width:120px;">Действия</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="7" class="hint" style="text-align:center;padding:20px;">Нет данных в диапазоне</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel mt-22">
+      <h3>Все метрики за день · сводная таблица</h3>
+      <div class="hint">Компактный вид всех 6 метрик за каждый день диапазона (только чтение). Для редактирования используйте таблицу выше или клик по ▤.</div>
+      <div class="scroll-x mt-12">${tableRecentRange(dailyRange.start, dailyRange.end)}</div>
+    </div>
+  `;
+}
+
+function tableRecentRange(startISO, endISO) {
+  const dates = [];
+  let cur = dateFromISO(startISO);
+  const endD = dateFromISO(endISO);
+  while (cur <= endD) { dates.push(isoFromDate(cur)); cur = addDays(cur, 1); }
+  dates.reverse();
+  const header = METRICS.map(m => `<th class="num">${m.name}</th>`).join('');
+  const rows = dates.map(d => {
+    const data = getDay(d);
+    if (!data) return `<tr><td>${d}</td>${METRICS.map(_=>'<td class="num">—</td>').join('')}</tr>`;
+    const cells = METRICS.map(m => {
+      const v = data[m.id] || {};
+      const st = statusFor(v.plan, v.fact, { lowerIsBetter: isLowerBetter(m.id) });
+      return `<td class="num">${fmtNum(v.fact)} <span class="pill ${st.cls}">${st.label}</span></td>`;
+    }).join('');
+    return `<tr><td>${d}</td>${cells}</tr>`;
+  }).join('');
+  return `<table class="tbl"><thead><tr><th>Дата</th>${header}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function onDailyMetricChange(v) { dailyMetric = v; renderPage('daily'); }
+function onDailyRangeChange() {
+  dailyRange.start = $('#dailyStart').value;
+  dailyRange.end = $('#dailyEnd').value;
+  renderPage('daily');
+}
+function setDailyRange(n) {
+  dailyRange.end = todayISO();
+  dailyRange.start = isoFromDate(addDays(new Date(), -(n-1)));
+  renderPage('daily');
+}
+function addDayPrompt() {
+  const d = prompt('Введите дату (YYYY-MM-DD):', todayISO());
+  if (!d) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { toast('Неверный формат даты', 'error'); return; }
+  if (d < dailyRange.start) dailyRange.start = d;
+  if (d > dailyRange.end) dailyRange.end = d;
+  const all = loadJSON(STORAGE_KEYS.daily, {});
+  if (!all[d]) { all[d] = {}; saveJSON(STORAGE_KEYS.daily, all); }
+  renderPage('daily');
+}
+function deleteDayConfirm(date) {
+  if (isViewer()) return;
+  if (!confirm(`Удалить ВСЕ метрики за ${date}?\nЭто действие нельзя отменить (но останется в истории изменений).`)) return;
+  const all = loadJSON(STORAGE_KEYS.daily, {});
+  if (all[date]) {
+    recordHistory({ date, metric: '*', field: 'deleted', oldValue: JSON.stringify(all[date]), newValue: null });
+    delete all[date];
+    saveJSON(STORAGE_KEYS.daily, all);
+    toast('Удалено: ' + date);
+    renderPage('daily');
+  }
+}
+function exportDailyCSV() {
+  const all = loadJSON(STORAGE_KEYS.daily, {});
+  let cur = dateFromISO(dailyRange.start);
+  const endD = dateFromISO(dailyRange.end);
+  let csv = 'date,metric,plan,fact,deviation,completion_percent,comment\n';
+  while (cur <= endD) {
+    const date = isoFromDate(cur);
+    const day = all[date] || {};
+    METRICS.forEach(m => {
+      const v = day[m.id] || {};
+      const plan = v.plan, fact = v.fact;
+      const dev = (plan != null && fact != null) ? (Number(fact) - Number(plan)) : '';
+      const pct = (plan && plan > 0 && fact != null) ? Math.round(Number(fact)/Number(plan)*100) : '';
+      csv += `${date},${m.id},${plan ?? ''},${fact ?? ''},${dev},${pct},"${(v.comment||'').replace(/"/g,'""')}"\n`;
+    });
+    cur = addDays(cur, 1);
+  }
+  downloadFile(`daily_${dailyRange.start}_${dailyRange.end}.csv`, csv, 'text/csv');
+}
+
+function openDayCard(date) {
+  const all = loadJSON(STORAGE_KEYS.daily, {});
+  const data = all[date] || {};
+  const ro = isViewer();
+  const dis = ro ? 'disabled' : '';
+  const rows = METRICS.map(m => {
+    const v = data[m.id] || {};
+    const dev = (v.plan != null && v.fact != null) ? Number(v.fact) - Number(v.plan) : null;
+    const pct = (v.plan && v.plan > 0 && v.fact != null) ? Math.round(Number(v.fact)/Number(v.plan)*100) : null;
+    return `
+      <tr data-dc-metric="${m.id}">
+        <td>${m.name}</td>
+        <td><input class="dc-plan cell-input" type="number" value="${v.plan ?? ''}" ${dis} style="width:90px;text-align:right;" /></td>
+        <td><input class="dc-fact cell-input" type="number" value="${v.fact ?? ''}" ${dis} style="width:90px;text-align:right;" /></td>
+        <td class="num dc-dev ${dev == null ? '' : dev >= 0 ? 'pos' : 'neg'}">${dev == null ? '—' : (dev >= 0 ? '+' : '') + fmtNum(dev)}</td>
+        <td class="num dc-pct">${pct == null ? '—' : pct + '%'}</td>
+        <td><input class="dc-comment cell-input" value="${escapeHtml(v.comment||'')}" ${dis} style="width:180px;" /></td>
+      </tr>
+    `;
+  }).join('');
+  showModal(`
+    <div class="modal-bg" onclick="if(event.target===this)closeModal()">
+      <div class="modal" style="max-width:820px;">
+        <div class="flex between center">
+          <h3>Все метрики · ${date}</h3>
+          <button class="btn ghost btn-sm" onclick="closeModal()">✕</button>
+        </div>
+        <div class="scroll-x">
+          <table class="tbl">
+            <thead><tr><th>Метрика</th><th>План</th><th>Факт</th><th class="num">Откл.</th><th class="num">%</th><th>Комментарий</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <div class="actions">
+          <button class="btn ghost btn-sm" onclick="closeModal()">Отмена</button>
+          ${ro ? '' : `<button class="btn" onclick="saveDayCard('${date}')">Сохранить все</button>`}
+        </div>
+      </div>
+    </div>
+  `);
+}
+function saveDayCard(date) {
+  if (isViewer()) return;
+  const all = loadJSON(STORAGE_KEYS.daily, {});
+  if (!all[date]) all[date] = {};
+  $$('#globalModalHolder tr[data-dc-metric]').forEach(tr => {
+    const id = tr.dataset.dcMetric;
+    const prev = all[date][id] || {};
+    const next = {
+      plan: tr.querySelector('.dc-plan').value === '' ? null : Number(tr.querySelector('.dc-plan').value),
+      fact: tr.querySelector('.dc-fact').value === '' ? null : Number(tr.querySelector('.dc-fact').value),
+      comment: tr.querySelector('.dc-comment').value
+    };
+    ['plan','fact','comment'].forEach(f => {
+      if ((prev[f] ?? null) !== (next[f] ?? null)) {
+        recordHistory({ date, metric: id, field: f, oldValue: prev[f] ?? null, newValue: next[f] ?? null });
+      }
+    });
+    all[date][id] = next;
+  });
+  saveJSON(STORAGE_KEYS.daily, all);
+  closeModal();
+  toast('Сохранено · ' + date);
+  renderPage('daily');
+}
+
+function postDaily() {
+  if (isViewer()) return;
+  $$('#content .tbl-editor tbody tr[data-date]').forEach(tr => {
+    const date = tr.dataset.date;
+    const plan = tr.querySelector('.tbl-plan');
+    const fact = tr.querySelector('.tbl-fact');
+    const comment = tr.querySelector('.tbl-comment');
+    if (!plan) return;
+    const devCell = tr.querySelector('.cell-dev');
+    const pctCell = tr.querySelector('.cell-pct');
+    const factCell = fact.closest('td');
+    let timer = null;
+    const recalc = () => {
+      const planV = plan.value === '' ? null : Number(plan.value);
+      const factV = fact.value === '' ? null : Number(fact.value);
+      const dev = (planV != null && factV != null) ? factV - planV : null;
+      const pct = (planV && planV > 0 && factV != null) ? Math.round(factV/planV*100) : null;
+      devCell.textContent = dev == null ? '—' : (dev >= 0 ? '+' : '') + fmtNum(dev);
+      devCell.className = 'num cell-dev ' + (dev == null ? '' : dev >= 0 ? 'pos' : 'neg');
+      let pctCls = '';
+      if (pct != null) {
+        const ratio = pct / 100;
+        if (isLowerBetter(dailyMetric)) pctCls = ratio <= 1 ? 'good-cell' : ratio <= 1.15 ? 'warn-cell' : 'bad-cell';
+        else pctCls = ratio >= 0.97 ? 'good-cell' : ratio >= 0.85 ? 'warn-cell' : 'bad-cell';
+      }
+      pctCell.textContent = pct == null ? '—' : pct + '%';
+      pctCell.className = 'num cell-pct ' + pctCls;
+      factCell.classList.remove('cell-fact-good','cell-fact-warn','cell-fact-bad');
+      if (pctCls) factCell.classList.add(pctCls.replace('-cell','').replace(/^/, 'cell-fact-'));
+    };
+    [plan, fact].forEach(inp => inp.addEventListener('input', recalc));
+    [plan, fact, comment].forEach(inp => inp.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const all = loadJSON(STORAGE_KEYS.daily, {});
+        if (!all[date]) all[date] = {};
+        const prev = all[date][dailyMetric] || {};
+        const next = {
+          plan: plan.value === '' ? null : Number(plan.value),
+          fact: fact.value === '' ? null : Number(fact.value),
+          comment: comment.value
+        };
+        ['plan','fact','comment'].forEach(f => {
+          if ((prev[f] ?? null) !== (next[f] ?? null)) {
+            recordHistory({ date, metric: dailyMetric, field: f, oldValue: prev[f] ?? null, newValue: next[f] ?? null });
+          }
+        });
+        all[date][dailyMetric] = next;
+        saveJSON(STORAGE_KEYS.daily, all);
+        toast('Сохранено · ' + date);
+      }, 500);
+    }));
+  });
+}
+
+/* ============================================================
+   WEEKLY
+   ============================================================ */
+let currentWeekStart = null;
+function viewWeekly() {
+  if (!currentWeekStart) currentWeekStart = isoFromDate(startOfWeek(new Date()));
+  const start = dateFromISO(currentWeekStart);
+  const end = addDays(start, 6);
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(start, i);
+    days.push({ date: isoFromDate(d), data: getDay(isoFromDate(d)) });
+  }
+  // aggregate per metric
+  const agg = METRICS.map(m => {
+    let sumPlan = 0, sumFact = 0, cnt = 0;
+    days.forEach(d => {
+      const v = d.data?.[m.id];
+      if (v?.plan != null) sumPlan += Number(v.plan);
+      if (v?.fact != null) { sumFact += Number(v.fact); cnt++; }
+    });
+    const avg = cnt > 0 ? (sumFact / cnt) : 0;
+    const st = statusFor(sumPlan, sumFact, { lowerIsBetter: isLowerBetter(m.id) });
+    return { metric: m, sumPlan, sumFact, avg, st };
+  });
+  const rows = agg.map(a => `
+    <tr>
+      <td>${a.metric.name}</td>
+      <td class="num">${fmtNum(Math.round(a.sumPlan))}</td>
+      <td class="num">${fmtNum(Math.round(a.sumFact))}</td>
+      <td class="num">${fmtNum(Math.round(a.avg))}</td>
+      <td class="num"><span class="pill ${a.st.cls}">${a.st.label}</span></td>
+    </tr>
+  `).join('');
+
+  // worst/best metric for insights
+  const ranked = [...agg].filter(a => a.st.pct !== null).sort((x,y) => y.st.pct - x.st.pct);
+  const best = ranked[0], worst = ranked[ranked.length-1];
+
+  return `
+    <div class="panel">
+      <div class="flex between center">
+        <div class="flex gap-12 center">
+          <button class="btn secondary btn-sm" onclick="shiftWeek(-1)">← Прошлая</button>
+          <div class="page-title" style="font-size:16px;">Неделя: ${isoFromDate(start)} — ${isoFromDate(end)}</div>
+          <button class="btn secondary btn-sm" onclick="shiftWeek(1)">Следующая →</button>
+        </div>
+        <div class="row-actions">
+          <button class="btn ghost btn-sm" onclick="exportWeekCSV()">Экспорт CSV</button>
+        </div>
+      </div>
+      <div class="row cols-2 mt-16">
+        <div>
+          <div class="scroll-x">
+            <table class="tbl">
+              <thead><tr><th>Метрика</th><th class="num">План (сумма)</th><th class="num">Факт (сумма)</th><th class="num">Среднее/день</th><th class="num">% плана</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+        <div class="chart-wrap"><canvas id="chWeek"></canvas></div>
+      </div>
+      ${best && worst ? `
+      <div class="row cols-2 mt-22">
+        <div class="panel" style="background:var(--panel-2);">
+          <div class="hint">Лучшая метрика недели</div>
+          <div style="font-size:18px;font-weight:700;margin-top:6px;">${best.metric.name}</div>
+          <div class="pill ${best.st.cls}" style="margin-top:6px;">${best.st.label}</div>
+        </div>
+        <div class="panel" style="background:var(--panel-2);">
+          <div class="hint">Худшая метрика недели</div>
+          <div style="font-size:18px;font-weight:700;margin-top:6px;">${worst.metric.name}</div>
+          <div class="pill ${worst.st.cls}" style="margin-top:6px;">${worst.st.label}</div>
+        </div>
+      </div>` : ''}
+    </div>
+  `;
+}
+function shiftWeek(delta) {
+  const start = dateFromISO(currentWeekStart);
+  currentWeekStart = isoFromDate(addDays(start, 7*delta));
+  renderPage('weekly');
+}
+function postWeekly() {
+  const start = dateFromISO(currentWeekStart);
+  const labels = [];
+  const facts = {};
+  METRICS.forEach(m => facts[m.id] = []);
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(start, i);
+    const key = isoFromDate(d);
+    labels.push(key.slice(5));
+    const data = getDay(key);
+    METRICS.forEach(m => facts[m.id].push(data?.[m.id]?.fact ?? null));
+  }
+  const palette = chartPalette();
+  const colors = [palette.accent, palette.accent2, palette.green, palette.yellow, palette.red, palette.muted];
+  chartInstances.week = new Chart($('#chWeek'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: METRICS.map((m,i) => ({
+        label: m.name, data: facts[m.id], borderColor: colors[i%colors.length], tension: .3, pointRadius: 2, fill: false
+      }))
+    },
+    options: chartCommon()
+  });
+}
+function exportWeekCSV() {
+  const start = dateFromISO(currentWeekStart);
+  let csv = 'date,' + METRICS.map(m => `${m.id}_plan,${m.id}_fact,${m.id}_var`).join(',') + '\n';
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(start, i);
+    const key = isoFromDate(d);
+    const data = getDay(key) || {};
+    const row = [key];
+    METRICS.forEach(m => {
+      const v = data[m.id] || {};
+      row.push(v.plan ?? '', v.fact ?? '', metricVariance(v.plan, v.fact) ?? '');
+    });
+    csv += row.join(',') + '\n';
+  }
+  downloadFile(`week_${isoFromDate(start)}.csv`, csv, 'text/csv');
+}
+
+/* ============================================================
+   MONTHLY
+   ============================================================ */
+let currentMonth = null;
+function viewMonthly() {
+  if (!currentMonth) currentMonth = monthKey(new Date());
+  const [y, m] = currentMonth.split('-').map(Number);
+  const first = new Date(y, m-1, 1);
+  const last = new Date(y, m, 0);
+  const daysInMonth = last.getDate();
+
+  const days = [];
+  let bestDay = null, worstDay = null;
+  for (let i = 1; i <= daysInMonth; i++) {
+    const d = new Date(y, m-1, i);
+    const key = isoFromDate(d);
+    const data = getDay(key);
+    days.push({ date: key, data });
+    // best/worst by channel fact growth
+    if (data?.channel_members?.fact != null && data?.channel_members?.plan) {
+      const r = data.channel_members.fact / data.channel_members.plan;
+      if (!bestDay || r > bestDay.r) bestDay = { key, r };
+      if (!worstDay || r < worstDay.r) worstDay = { key, r };
+    }
+  }
+
+  const agg = METRICS.map(mt => {
+    let sumPlan = 0, sumFact = 0, cnt = 0, firstFact=null, lastFact=null;
+    days.forEach(d => {
+      const v = d.data?.[mt.id];
+      if (v?.plan != null) sumPlan += Number(v.plan);
+      if (v?.fact != null) {
+        sumFact += Number(v.fact); cnt++;
+        if (firstFact===null) firstFact = Number(v.fact);
+        lastFact = Number(v.fact);
+      }
+    });
+    const trend = (firstFact!=null && lastFact!=null) ? (lastFact - firstFact) : 0;
+    const st = statusFor(sumPlan, sumFact, { lowerIsBetter: isLowerBetter(mt.id) });
+    return { metric: mt, sumPlan, sumFact, avg: cnt?sumFact/cnt:0, trend, st };
+  });
+
+  const rows = agg.map(a => `
+    <tr>
+      <td>${a.metric.name}</td>
+      <td class="num">${fmtNum(Math.round(a.sumPlan))}</td>
+      <td class="num">${fmtNum(Math.round(a.sumFact))}</td>
+      <td class="num">${fmtNum(Math.round(a.avg))}</td>
+      <td class="num">${a.trend>=0?'▲':'▼'} ${fmtNum(Math.abs(Math.round(a.trend)))}</td>
+      <td class="num"><span class="pill ${a.st.cls}">${a.st.label}</span></td>
+    </tr>
+  `).join('');
+
+  // overall KPI = avg of pct
+  const pcts = agg.filter(a => a.st.pct !== null).map(a => a.st.pct);
+  const overall = pcts.length ? Math.round(pcts.reduce((s,x)=>s+x,0) / pcts.length) : 0;
+  const overallCls = overall >= 97 ? 'green' : overall >= 85 ? 'yellow' : 'red';
+
+  return `
+    <div class="panel">
+      <div class="flex between center">
+        <div class="flex gap-12 center">
+          <button class="btn secondary btn-sm" onclick="shiftMonth(-1)">← Прошлый</button>
+          <div class="page-title" style="font-size:16px;">Месяц: ${monthLabel(currentMonth)}</div>
+          <button class="btn secondary btn-sm" onclick="shiftMonth(1)">Следующий →</button>
+        </div>
+        <div class="row-actions">
+          <button class="btn ghost btn-sm" onclick="exportMonthCSV()">Экспорт CSV</button>
+        </div>
+      </div>
+
+      <div class="row cols-3 mt-16">
+        <div class="kpi status-${overallCls}">
+          <div class="label">Общий KPI выполнения</div>
+          <div class="value">${overall}%</div>
+          <div class="delta"><span class="hint">Средний % по метрикам</span></div>
+          <div class="bar"><span style="width:${Math.min(100, overall)}%"></span></div>
+        </div>
+        <div class="kpi">
+          <div class="label">Лучший день месяца</div>
+          <div class="value">${bestDay ? bestDay.key : '—'}</div>
+          <div class="delta"><span class="hint">По выполнению плана подписчиков</span></div>
+        </div>
+        <div class="kpi">
+          <div class="label">Худший день месяца</div>
+          <div class="value">${worstDay ? worstDay.key : '—'}</div>
+          <div class="delta"><span class="hint">По выполнению плана подписчиков</span></div>
+        </div>
+      </div>
+
+      <div class="row cols-2 mt-22">
+        <div>
+          <div class="scroll-x">
+            <table class="tbl">
+              <thead><tr><th>Метрика</th><th class="num">План</th><th class="num">Факт</th><th class="num">Среднее/день</th><th class="num">Тренд</th><th class="num">% плана</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+        <div class="chart-wrap"><canvas id="chMonth"></canvas></div>
+      </div>
+    </div>
+  `;
+}
+function shiftMonth(delta) {
+  const [y,m] = currentMonth.split('-').map(Number);
+  const d = new Date(y, m-1+delta, 1);
+  currentMonth = monthKey(d);
+  renderPage('monthly');
+}
+function postMonthly() {
+  const [y,m] = currentMonth.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const labels = [], chanFact = [], chanPlan = [], newF = [];
+  for (let i = 1; i <= daysInMonth; i++) {
+    const key = isoFromDate(new Date(y, m-1, i));
+    labels.push(String(i));
+    const d = getDay(key);
+    chanFact.push(d?.channel_members?.fact ?? null);
+    chanPlan.push(d?.channel_members?.plan ?? null);
+    newF.push(d?.new_members?.fact ?? null);
+  }
+  const p = chartPalette();
+  chartInstances.month = new Chart($('#chMonth'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Канал (факт)', data: chanFact, borderColor: p.accent, backgroundColor: p.accent+'33', tension: .25, fill: true, pointRadius: 0 },
+        { label: 'Канал (план)', data: chanPlan, borderColor: p.muted, borderDash: [5,5], tension: .25, pointRadius: 0, fill: false },
+        { label: 'Новые',        data: newF,    borderColor: p.green,  tension: .25, pointRadius: 0, fill: false, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      ...chartCommon(),
+      scales: {
+        x: { ticks: { color: p.muted }, grid: { color: p.grid } },
+        y: { ticks: { color: p.muted }, grid: { color: p.grid }, position: 'left' },
+        y1: { ticks: { color: p.muted }, grid: { display: false }, position: 'right' }
+      }
+    }
+  });
+}
+function exportMonthCSV() {
+  const [y,m] = currentMonth.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  let csv = 'date,' + METRICS.map(mt => `${mt.id}_plan,${mt.id}_fact,${mt.id}_var,${mt.id}_comment`).join(',') + '\n';
+  for (let i = 1; i <= daysInMonth; i++) {
+    const key = isoFromDate(new Date(y, m-1, i));
+    const data = getDay(key) || {};
+    const row = [key];
+    METRICS.forEach(mt => {
+      const v = data[mt.id] || {};
+      row.push(v.plan ?? '', v.fact ?? '', metricVariance(v.plan, v.fact) ?? '', `"${(v.comment||'').replace(/"/g,'""')}"`);
+    });
+    csv += row.join(',') + '\n';
+  }
+  downloadFile(`month_${currentMonth}.csv`, csv, 'text/csv');
+}
+
+/* ============================================================
+   STRATEGY (24 months)
+   ============================================================ */
+function viewStrategy() {
+  const strategy = loadJSON(STORAGE_KEYS.strategy, []);
+
+  // Сводка по всему горизонту: сумма план/факт по каждой метрике
+  const totals = {};
+  STRATEGY_METRICS.forEach(m => totals[m.id] = { plan: 0, fact: 0 });
+  strategy.forEach(s => {
+    STRATEGY_METRICS.forEach(m => {
+      const v = s.metrics?.[m.id] || { plan: 0, fact: 0 };
+      totals[m.id].plan += Number(v.plan) || 0;
+      totals[m.id].fact += Number(v.fact) || 0;
+    });
+  });
+
+  const cards = strategy.map((s, idx) => {
+    const statusCls = s.status === 'Выполнено' ? 'green' : s.status === 'Просрочено' ? 'red' : 'yellow';
+    const metricsRows = STRATEGY_METRICS.map(m => {
+      const v = s.metrics?.[m.id] || { plan: 0, fact: 0 };
+      const plan = Number(v.plan) || 0;
+      const fact = Number(v.fact) || 0;
+      const pct = plan > 0 ? Math.round(fact / plan * 100) : null;
+      const cls = pct == null ? '' : (pct >= 97 ? 'good-cell' : pct >= 85 ? 'warn-cell' : 'bad-cell');
+      return `
+        <tr>
+          <td>${m.name}</td>
+          <td class="num">${fmtNum(plan)}</td>
+          <td class="num">${fmtNum(fact)}</td>
+          <td class="num ${cls}">${pct == null ? '—' : pct + '%'}</td>
+        </tr>
+      `;
+    }).join('');
+    return `
+      <div class="strategy-card" onclick="openStrategy(${idx})">
+        <div class="flex between center">
+          <div class="month">${monthLabel(s.month)}</div>
+          <span class="pill ${statusCls}">${s.status}</span>
+        </div>
+        <div class="goal">${s.goal ? escapeHtml(s.goal) : '<span style="color:var(--muted);">Цель не задана</span>'}</div>
+        ${s.kpi ? `<div class="hint" style="margin-top:2px;">KPI: ${escapeHtml(s.kpi)}</div>` : ''}
+        <div class="scroll-x mt-12">
+          <table class="strategy-mini">
+            <thead><tr><th>Метрика</th><th class="num">План</th><th class="num">Факт</th><th class="num">%</th></tr></thead>
+            <tbody>${metricsRows}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const totalsHTML = STRATEGY_METRICS.map(m => {
+    const t = totals[m.id];
+    const pct = t.plan > 0 ? Math.round(t.fact / t.plan * 100) : null;
+    const cls = pct == null ? 'gray' : (pct >= 97 ? 'green' : pct >= 85 ? 'yellow' : 'red');
+    return `
+      <div class="kpi">
+        <div class="label">${m.name}</div>
+        <div class="value">${fmtNum(t.fact)} <span class="hint" style="font-size:12px;font-weight:400;">/ ${fmtNum(t.plan)}</span></div>
+        <div class="delta"><span class="hint">Итог по всему горизонту</span><span class="pill ${cls}">${pct == null ? '—' : pct + '%'}</span></div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="panel">
+      <div class="flex between center" style="flex-wrap:wrap;gap:12px;">
+        <div>
+          <h3 style="margin:0;">Стратегия развития · ${strategy.length} мес.</h3>
+          <div class="hint">Помесячные блоки. Метрики: участники канала, участники чата, зарегистрированные таблицы, стоимость подписки — план и факт по каждой. Клик по карточке — редактирование.</div>
+        </div>
+        <div class="row-actions">
+          ${isAdmin() ? `<button class="btn secondary btn-sm" onclick="addStrategyMonth()">+ Добавить месяц</button>` : ''}
+          ${isAdmin() ? `<button class="btn ghost btn-sm" onclick="exportStrategyCSV()">Экспорт CSV</button>` : ''}
+        </div>
+      </div>
+
+      <div class="row cols-4 mt-16">${totalsHTML}</div>
+
+      <div class="strategy-grid mt-22">${cards}</div>
+    </div>
+
+    <div class="row cols-2 mt-22">
+      <div class="panel">
+        <h3>План vs Факт: участники</h3>
+        <div class="chart-wrap"><canvas id="chStrategyMembers"></canvas></div>
+      </div>
+      <div class="panel">
+        <h3>Таблицы и стоимость подписки</h3>
+        <div class="chart-wrap"><canvas id="chStrategyOther"></canvas></div>
+      </div>
+    </div>
+  `;
+}
+
+function postStrategy() {
+  const strategy = loadJSON(STORAGE_KEYS.strategy, []);
+  const labels = strategy.map(s => {
+    const [y,m] = s.month.split('-');
+    const months = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+    return months[Number(m)-1] + ' ' + y.slice(2);
+  });
+  const p = chartPalette();
+  const get = (id, field) => strategy.map(s => Number(s.metrics?.[id]?.[field]) || 0);
+
+  chartInstances.stratM = new Chart($('#chStrategyMembers'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'План: канал', data: get('channel_members','plan'), borderColor: p.accent, backgroundColor: p.accent+'22', fill: true, tension: .3, pointRadius: 2 },
+        { label: 'Факт: канал', data: get('channel_members','fact'), borderColor: p.accent, borderDash: [5,4], tension: .3, pointRadius: 2 },
+        { label: 'План: чат',    data: get('chat_members','plan'),    borderColor: p.accent2, tension: .3, pointRadius: 2 },
+        { label: 'Факт: чат',    data: get('chat_members','fact'),    borderColor: p.accent2, borderDash: [5,4], tension: .3, pointRadius: 2 }
+      ]
+    },
+    options: chartCommon()
+  });
+
+  chartInstances.stratO = new Chart($('#chStrategyOther'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'План: таблицы', data: get('registered_tables','plan'), borderColor: p.green, tension: .3, pointRadius: 2 },
+        { label: 'Факт: таблицы', data: get('registered_tables','fact'), borderColor: p.green, borderDash: [5,4], tension: .3, pointRadius: 2 },
+        { label: 'План: цена',     data: get('subscription_price','plan'), borderColor: p.yellow, tension: .3, pointRadius: 2, yAxisID: 'y1' },
+        { label: 'Факт: цена',     data: get('subscription_price','fact'), borderColor: p.yellow, borderDash: [5,4], tension: .3, pointRadius: 2, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      ...chartCommon(),
+      scales: {
+        x: { ticks: { color: p.muted }, grid: { color: p.grid } },
+        y:  { ticks: { color: p.muted }, grid: { color: p.grid }, position: 'left',  title: { display: true, text: 'Таблицы', color: p.muted } },
+        y1: { ticks: { color: p.muted }, grid: { display:false }, position: 'right', title: { display: true, text: 'Цена', color: p.muted } }
+      }
+    }
+  });
+}
+
+function openStrategy(idx) {
+  const strategy = loadJSON(STORAGE_KEYS.strategy, []);
+  const s = strategy[idx];
+  const ro = !isAdmin();
+  const dis = ro ? 'disabled' : '';
+
+  const metricRows = STRATEGY_METRICS.map(m => {
+    const v = s.metrics?.[m.id] || { plan: 0, fact: 0 };
+    const plan = Number(v.plan) || 0;
+    const fact = Number(v.fact) || 0;
+    const dev = fact - plan;
+    const pct = plan > 0 ? Math.round(fact / plan * 100) : null;
+    return `
+      <tr data-st-metric="${m.id}">
+        <td>${m.name}${m.daily ? '<div class="hint" style="font-size:11px;">авто из ежедневных</div>' : ''}</td>
+        <td><input class="st-plan cell-input" type="number" value="${plan}" ${dis} style="width:120px;text-align:right;" /></td>
+        <td><input class="st-fact cell-input" type="number" value="${fact}" ${dis} style="width:120px;text-align:right;" /></td>
+        <td class="num st-dev ${dev >= 0 ? 'pos' : 'neg'}">${(dev >= 0 ? '+' : '') + fmtNum(dev)}</td>
+        <td class="num st-pct ${pct == null ? '' : pct >= 97 ? 'good-cell' : pct >= 85 ? 'warn-cell' : 'bad-cell'}">${pct == null ? '—' : pct + '%'}</td>
+      </tr>
+    `;
+  }).join('');
+
+  showModal(`
+    <div class="modal-bg" onclick="if(event.target===this)closeModal()">
+      <div class="modal" style="max-width:780px;">
+        <div class="flex between center">
+          <h3>${monthLabel(s.month)}</h3>
+          <button class="btn ghost btn-sm" onclick="closeModal()">✕</button>
+        </div>
+        <div class="row cols-2 mt-12">
+          <div class="field"><label>Основная цель</label><input id="st_goal" value="${escapeHtml(s.goal)}" ${dis} /></div>
+          <div class="field"><label>KPI</label><input id="st_kpi" value="${escapeHtml(s.kpi)}" ${dis} /></div>
+        </div>
+        <div class="mt-16 scroll-x">
+          <table class="tbl">
+            <thead><tr><th>Метрика</th><th>План</th><th>Факт</th><th class="num">Откл.</th><th class="num">% выполнения</th></tr></thead>
+            <tbody>${metricRows}</tbody>
+          </table>
+        </div>
+        ${ro ? '' : `
+          <div class="row-actions mt-12">
+            <button class="btn ghost btn-sm" onclick="autoFillStrategyMonth(${idx})">Подтянуть факт из ежедневных данных</button>
+            <span class="hint" style="align-self:center;">(участники канала/чата — значение на последний день месяца; таблицы — сумма за месяц)</span>
+          </div>
+        `}
+        <div class="row cols-2 mt-16">
+          <div class="field"><label>Статус</label>
+            <select id="st_status" ${dis}>
+              ${STATUS_LIST.map(o => `<option ${o===s.status?'selected':''}>${o}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field"><label>Комментарий</label><input id="st_comment" value="${escapeHtml(s.comment)}" ${dis} /></div>
+        </div>
+        <div class="actions">
+          ${isAdmin() && idx === strategy.length - 1 ? `<button class="btn danger btn-sm" onclick="removeLastStrategyMonth(${idx})">Удалить последний месяц</button>` : ''}
+          <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
+          ${ro ? '' : `<button class="btn" onclick="saveStrategy(${idx})">Сохранить</button>`}
+        </div>
+      </div>
+    </div>
+  `);
+
+  // live recalc deviation/% inside modal
+  $$('#globalModalHolder tr[data-st-metric]').forEach(tr => {
+    const plan = tr.querySelector('.st-plan');
+    const fact = tr.querySelector('.st-fact');
+    const recalc = () => {
+      const p = Number(plan.value) || 0;
+      const f = Number(fact.value) || 0;
+      const dev = f - p;
+      const pct = p > 0 ? Math.round(f / p * 100) : null;
+      const devCell = tr.querySelector('.st-dev');
+      const pctCell = tr.querySelector('.st-pct');
+      devCell.textContent = (dev >= 0 ? '+' : '') + fmtNum(dev);
+      devCell.className = 'num st-dev ' + (dev >= 0 ? 'pos' : 'neg');
+      const cls = pct == null ? '' : pct >= 97 ? 'good-cell' : pct >= 85 ? 'warn-cell' : 'bad-cell';
+      pctCell.textContent = pct == null ? '—' : pct + '%';
+      pctCell.className = 'num st-pct ' + cls;
+    };
+    plan.addEventListener('input', recalc);
+    fact.addEventListener('input', recalc);
+  });
+}
+
+function autoFillStrategyMonth(idx) {
+  if (!isAdmin()) return;
+  const strategy = loadJSON(STORAGE_KEYS.strategy, []);
+  const s = strategy[idx];
+  const [y, m] = s.month.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const dailyAll = loadJSON(STORAGE_KEYS.daily, {});
+  let filled = 0;
+  STRATEGY_METRICS.forEach(sm => {
+    if (!sm.daily) return;
+    let val = null;
+    if (sm.dailyMode === 'last') {
+      for (let i = daysInMonth; i >= 1; i--) {
+        const key = isoFromDate(new Date(y, m-1, i));
+        const v = dailyAll[key]?.[sm.daily];
+        if (v?.fact != null) { val = Number(v.fact); break; }
+      }
+    } else if (sm.dailyMode === 'sum') {
+      let sum = 0, found = false;
+      for (let i = 1; i <= daysInMonth; i++) {
+        const key = isoFromDate(new Date(y, m-1, i));
+        const v = dailyAll[key]?.[sm.daily];
+        if (v?.fact != null) { sum += Number(v.fact); found = true; }
+      }
+      if (found) val = sum;
+    }
+    if (val != null) {
+      const input = document.querySelector(`#globalModalHolder tr[data-st-metric="${sm.id}"] .st-fact`);
+      if (input) {
+        input.value = val;
+        input.dispatchEvent(new Event('input'));
+        filled++;
+      }
+    }
+  });
+  toast(filled ? `Подтянуто метрик: ${filled}` : 'Ежедневных данных за этот месяц нет', filled ? 'success' : 'error');
+}
+
+function saveStrategy(idx) {
+  if (!isAdmin()) return;
+  const strategy = loadJSON(STORAGE_KEYS.strategy, []);
+  const metrics = {};
+  $$('#globalModalHolder tr[data-st-metric]').forEach(tr => {
+    const id = tr.dataset.stMetric;
+    metrics[id] = {
+      plan: Number(tr.querySelector('.st-plan').value) || 0,
+      fact: Number(tr.querySelector('.st-fact').value) || 0
+    };
+  });
+  strategy[idx] = {
+    ...strategy[idx],
+    goal: $('#st_goal').value,
+    kpi: $('#st_kpi').value,
+    metrics,
+    status: $('#st_status').value,
+    comment: $('#st_comment').value
+  };
+  saveJSON(STORAGE_KEYS.strategy, strategy);
+  closeModal();
+  toast('Стратегия обновлена · ' + monthLabel(strategy[idx].month));
+  renderPage('strategy');
+}
+
+function addStrategyMonth() {
+  if (!isAdmin()) return;
+  const strategy = loadJSON(STORAGE_KEYS.strategy, []);
+  let next;
+  if (strategy.length === 0) {
+    const d = new Date(); d.setDate(1);
+    next = d;
+  } else {
+    const [y,m] = strategy[strategy.length-1].month.split('-').map(Number);
+    next = new Date(y, m, 1); // следующий месяц
+  }
+  strategy.push({
+    month: monthKey(next),
+    goal: '', kpi: '',
+    metrics: blankStrategyMetrics(),
+    status: 'В процессе', comment: ''
+  });
+  saveJSON(STORAGE_KEYS.strategy, strategy);
+  toast('Добавлен месяц · ' + monthLabel(monthKey(next)));
+  renderPage('strategy');
+}
+
+function removeLastStrategyMonth(idx) {
+  if (!isAdmin()) return;
+  const strategy = loadJSON(STORAGE_KEYS.strategy, []);
+  if (idx !== strategy.length - 1) { toast('Удалить можно только последний месяц', 'error'); return; }
+  if (!confirm(`Удалить ${monthLabel(strategy[idx].month)} из стратегии?`)) return;
+  strategy.pop();
+  saveJSON(STORAGE_KEYS.strategy, strategy);
+  closeModal();
+  toast('Месяц удалён');
+  renderPage('strategy');
+}
+
+function exportStrategyCSV() {
+  const strategy = loadJSON(STORAGE_KEYS.strategy, []);
+  const cols = ['month','goal','kpi','status','comment'];
+  STRATEGY_METRICS.forEach(m => { cols.push(`${m.id}_plan`); cols.push(`${m.id}_fact`); cols.push(`${m.id}_completion_percent`); });
+  let csv = cols.join(',') + '\n';
+  strategy.forEach(s => {
+    const row = [
+      s.month,
+      `"${(s.goal||'').replace(/"/g,'""')}"`,
+      `"${(s.kpi||'').replace(/"/g,'""')}"`,
+      s.status,
+      `"${(s.comment||'').replace(/"/g,'""')}"`
+    ];
+    STRATEGY_METRICS.forEach(m => {
+      const v = s.metrics?.[m.id] || { plan: 0, fact: 0 };
+      const plan = Number(v.plan) || 0;
+      const fact = Number(v.fact) || 0;
+      const pct = plan > 0 ? Math.round(fact / plan * 100) : '';
+      row.push(plan, fact, pct);
+    });
+    csv += row.join(',') + '\n';
+  });
+  downloadFile('strategy.csv', csv, 'text/csv');
+}
+function escapeHtml(s) { return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ============================================================
+   ANALYTICS
+   ============================================================ */
+let analyticsRange = null;
+function viewAnalytics() {
+  if (!analyticsRange) {
+    const end = todayISO();
+    const start = isoFromDate(addDays(new Date(), -29));
+    analyticsRange = { start, end, metric: 'channel_members' };
+  }
+  const opts = METRICS.map(m => `<option value="${m.id}" ${m.id===analyticsRange.metric?'selected':''}>${m.name}</option>`).join('');
+  return `
+    <div class="panel">
+      <div class="flex gap-12 center" style="flex-wrap:wrap;">
+        <div class="field" style="min-width:160px;"><label>С</label><input type="date" id="anStart" value="${analyticsRange.start}" /></div>
+        <div class="field" style="min-width:160px;"><label>По</label><input type="date" id="anEnd" value="${analyticsRange.end}" /></div>
+        <div class="field" style="min-width:200px;"><label>Метрика</label><select id="anMetric">${opts}</select></div>
+        <button class="btn" onclick="applyAnalytics()" style="align-self:flex-end;">Применить</button>
+        <button class="btn ghost btn-sm" onclick="exportAnalyticsCSV()" style="align-self:flex-end;">Экспорт CSV</button>
+      </div>
+    </div>
+
+    <div class="row cols-3 mt-22">
+      <div class="panel"><div class="hint">Сумма плана</div><div class="value" id="anSumPlan" style="font-size:22px;font-weight:700;">—</div></div>
+      <div class="panel"><div class="hint">Сумма факта</div><div class="value" id="anSumFact" style="font-size:22px;font-weight:700;">—</div></div>
+      <div class="panel"><div class="hint">Выполнение плана</div><div class="value" id="anPct" style="font-size:22px;font-weight:700;">—</div></div>
+    </div>
+
+    <div class="panel mt-22">
+      <h3 id="anChartTitle">Динамика</h3>
+      <div class="chart-wrap"><canvas id="chAnalytics"></canvas></div>
+    </div>
+
+    <div class="panel mt-22">
+      <h3>Прогноз и рекомендация</h3>
+      <div id="anForecast" class="hint">—</div>
+    </div>
+  `;
+}
+function applyAnalytics() {
+  analyticsRange.start = $('#anStart').value;
+  analyticsRange.end = $('#anEnd').value;
+  analyticsRange.metric = $('#anMetric').value;
+  renderPage('analytics');
+}
+function postAnalytics() {
+  const { start, end, metric } = analyticsRange;
+  const days = [];
+  let cur = dateFromISO(start);
+  const endDate = dateFromISO(end);
+  while (cur <= endDate) {
+    const k = isoFromDate(cur);
+    days.push({ date: k, data: getDay(k) });
+    cur = addDays(cur, 1);
+  }
+  const facts = days.map(d => d.data?.[metric]?.fact ?? null);
+  const plans = days.map(d => d.data?.[metric]?.plan ?? null);
+  const sumP = plans.reduce((s,x)=>s+(x||0),0);
+  const sumF = facts.reduce((s,x)=>s+(x||0),0);
+  $('#anSumPlan').textContent = fmtNum(Math.round(sumP));
+  $('#anSumFact').textContent = fmtNum(Math.round(sumF));
+  const pct = sumP > 0 ? Math.round(sumF/sumP*100) : 0;
+  const cls = pct >= 97 ? 'green' : pct >= 85 ? 'yellow' : 'red';
+  $('#anPct').innerHTML = `<span class="pill ${cls}">${pct}%</span>`;
+
+  const p = chartPalette();
+  const mObj = METRICS.find(m => m.id === metric);
+  $('#anChartTitle').textContent = `Динамика · ${mObj?.name || metric}`;
+  chartInstances.an = new Chart($('#chAnalytics'), {
+    type: 'line',
+    data: {
+      labels: days.map(d => d.date.slice(5)),
+      datasets: [
+        { label: 'Факт', data: facts, borderColor: p.accent, backgroundColor: p.accent+'22', tension: .3, fill: true, pointRadius: 0 },
+        { label: 'План', data: plans, borderColor: p.muted, borderDash: [5,5], tension: .3, pointRadius: 0, fill: false }
+      ]
+    },
+    options: chartCommon()
+  });
+
+  // simple linear forecast (next 7 days)
+  const numeric = facts.map((v,i)=>({i, v})).filter(x => x.v != null);
+  let forecastText = '—';
+  if (numeric.length >= 5) {
+    const n = numeric.length;
+    const sx = numeric.reduce((s,p)=>s+p.i,0);
+    const sy = numeric.reduce((s,p)=>s+p.v,0);
+    const sxy = numeric.reduce((s,p)=>s+p.i*p.v,0);
+    const sxx = numeric.reduce((s,p)=>s+p.i*p.i,0);
+    const slope = (n*sxy - sx*sy) / (n*sxx - sx*sx);
+    const intercept = (sy - slope*sx) / n;
+    const fcEnd = intercept + slope*(numeric[n-1].i + 7);
+    const trend = slope >= 0 ? 'рост' : 'падение';
+    forecastText = `Линейный тренд: ${slope.toFixed(2)} в день (${trend}). Прогноз через 7 дней: <b>${fmtNum(Math.round(fcEnd))}</b>.` +
+      ` Рекомендация: ${slope >= 0 ? 'удерживайте темп и подкрепите контент-планом.' : 'усилите вовлечение и пересмотрите расписание постов.'}`;
+  }
+  $('#anForecast').innerHTML = forecastText;
+}
+function exportAnalyticsCSV() {
+  const { start, end, metric } = analyticsRange;
+  let csv = `date,${metric}_plan,${metric}_fact,${metric}_var\n`;
+  let cur = dateFromISO(start);
+  const endDate = dateFromISO(end);
+  while (cur <= endDate) {
+    const k = isoFromDate(cur);
+    const v = (getDay(k) || {})[metric] || {};
+    csv += `${k},${v.plan??''},${v.fact??''},${metricVariance(v.plan, v.fact) ?? ''}\n`;
+    cur = addDays(cur, 1);
+  }
+  downloadFile(`analytics_${metric}_${start}_${end}.csv`, csv, 'text/csv');
+}
+
+/* ============================================================
+   SETTINGS
+   ============================================================ */
+function viewSettings() {
+  const session = currentSession() || {};
+  return `
+    <div class="row cols-2">
+      <div class="panel">
+        <h3>Профиль</h3>
+        <div class="hint">Текущий пользователь</div>
+        <div style="font-size:18px;font-weight:700;margin-top:8px;">${session.user}</div>
+        <div class="pill gray mt-12">${session.role}</div>
+      </div>
+      <div class="panel">
+        <h3>Оформление</h3>
+        <div class="hint">Тема влияет на интерфейс и графики.</div>
+        <button class="btn secondary btn-sm mt-12" onclick="toggleTheme()">Переключить тему</button>
+      </div>
+    </div>
+
+    <div class="panel mt-22">
+      <h3>Данные</h3>
+      <div class="hint">Все данные хранятся локально в браузере. Можно экспортировать и импортировать всё разом.</div>
+      <div class="row-actions mt-12">
+        <button class="btn ghost btn-sm" onclick="exportAllJSON()">Экспорт всех данных (JSON)</button>
+        <label class="btn secondary btn-sm" style="cursor:pointer;">
+          Импорт JSON
+          <input type="file" accept="application/json" style="display:none" onchange="importAllJSON(event)" />
+        </label>
+        ${isAdmin() ? '<button class="btn danger btn-sm" onclick="if(confirm(\'Удалить ВСЕ данные (ежедневные, стратегию, базовые значения, историю)? Действие необратимо.\'))resetAll()">Очистить все данные</button>' : ''}
+      </div>
+    </div>
+
+    <div class="panel mt-22">
+      <h3>История изменений</h3>
+      <div class="hint">Журнал всех изменений: кто, когда, какое значение и какой метрики. Хранятся последние 1000 событий.</div>
+      <div class="row-actions mt-12">
+        <button class="btn secondary btn-sm" onclick="openHistory()">Открыть журнал</button>
+        <button class="btn ghost btn-sm" onclick="exportHistoryCSV()">Экспорт лога CSV</button>
+      </div>
+    </div>
+
+    <div class="panel mt-22">
+      <h3>Интеграции (план)</h3>
+      <div class="hint">
+        В рамках прототипа интеграции не подключены. В продакшене предусмотрено:
+        Telegram API для автозабора метрик; email/Telegram-уведомления о невыполнении KPI;
+        AI-анализ динамики; резервное копирование на сервер.
+      </div>
+    </div>
+  `;
+}
+
+/* ============================================================
+   EXPORT / IMPORT
+   ============================================================ */
+function downloadFile(name, content, mime) {
+  const blob = new Blob([content], { type: mime || 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 250);
+}
+function exportAllJSON() {
+  const payload = {
+    daily: loadJSON(STORAGE_KEYS.daily, {}),
+    strategy: loadJSON(STORAGE_KEYS.strategy, []),
+    exportedAt: new Date().toISOString()
+  };
+  downloadFile('rplus_data.json', JSON.stringify(payload, null, 2), 'application/json');
+  toast('Данные экспортированы');
+}
+function importAllJSON(ev) {
+  const file = ev.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const obj = JSON.parse(e.target.result);
+      if (obj.daily) saveJSON(STORAGE_KEYS.daily, obj.daily);
+      if (obj.strategy) saveJSON(STORAGE_KEYS.strategy, obj.strategy);
+      toast('Импорт завершен');
+      renderPage(currentPage);
+    } catch (err) { toast('Ошибка импорта: ' + err.message, 'error'); }
+  };
+  reader.readAsText(file);
+}
+function resetAll() {
+  localStorage.removeItem(STORAGE_KEYS.daily);
+  localStorage.removeItem(STORAGE_KEYS.strategy);
+  localStorage.removeItem(STORAGE_KEYS.baseline);
+  localStorage.removeItem(STORAGE_KEYS.history);
+  ensureSeed();
+  toast('Все данные очищены');
+  renderPage(currentPage);
+}
+
+/* ---------- history modal ---------- */
+function openHistory() {
+  const log = loadJSON(STORAGE_KEYS.history, []);
+  const items = log.slice().reverse().slice(0, 300);
+  const rows = items.map(e => {
+    const m = METRICS.find(x => x.id === e.metric);
+    const mLabel = e.metric === '*' ? '(весь день)' : (m ? m.name : e.metric);
+    const fLabel = ({plan:'План', fact:'Факт', comment:'Комментарий', deleted:'Удаление'})[e.field] || e.field;
+    return `<tr>
+      <td>${new Date(e.ts).toLocaleString('ru-RU')}</td>
+      <td>${escapeHtml(e.user||'')}</td>
+      <td>${e.date}</td>
+      <td>${mLabel}</td>
+      <td>${fLabel}${e.bulk?' <span class="pill gray">массово</span>':''}${e.source==='csv'?' <span class="pill gray">csv</span>':''}</td>
+      <td class="num">${e.oldValue == null ? '—' : escapeHtml(String(e.oldValue)).slice(0,60)}</td>
+      <td class="num">${e.newValue == null ? '—' : escapeHtml(String(e.newValue)).slice(0,60)}</td>
+    </tr>`;
+  }).join('');
+  showModal(`
+    <div class="modal-bg" onclick="if(event.target===this)closeModal()">
+      <div class="modal" style="max-width:1000px;">
+        <div class="flex between center">
+          <h3>История изменений · ${log.length} событий</h3>
+          <button class="btn ghost btn-sm" onclick="closeModal()">✕</button>
+        </div>
+        <div class="hint">Показаны последние 300 записей. Используется при аудите и откате изменений.</div>
+        <div class="scroll-x mt-12" style="max-height:60vh;overflow:auto;">
+          <table class="tbl">
+            <thead><tr><th>Время</th><th>Пользователь</th><th>Дата</th><th>Метрика</th><th>Поле</th><th class="num">Было</th><th class="num">Стало</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="7" class="hint" style="text-align:center;padding:14px;">Записей нет</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div class="actions">
+          ${isAdmin() ? `<button class="btn danger btn-sm" onclick="clearHistoryConfirm()">Очистить лог</button>` : ''}
+          <button class="btn" onclick="closeModal()">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+function clearHistoryConfirm() {
+  if (!confirm('Очистить весь журнал истории изменений? Это действие необратимо.')) return;
+  localStorage.removeItem(STORAGE_KEYS.history);
+  toast('Журнал очищен');
+  openHistory();
+}
+function exportHistoryCSV() {
+  const log = loadJSON(STORAGE_KEYS.history, []);
+  let csv = 'timestamp,user,date,metric,field,old_value,new_value,bulk,source\n';
+  log.forEach(e => {
+    csv += [
+      e.ts, e.user||'', e.date||'', e.metric||'', e.field||'',
+      `"${String(e.oldValue ?? '').replace(/"/g,'""')}"`,
+      `"${String(e.newValue ?? '').replace(/"/g,'""')}"`,
+      e.bulk?1:0, e.source||''
+    ].join(',') + '\n';
+  });
+  downloadFile('history.csv', csv, 'text/csv');
+}
+
+/* ============================================================
+   NAV BINDINGS
+   ============================================================ */
+document.addEventListener('click', e => {
+  const item = e.target.closest?.('.nav-item');
+  if (item) renderPage(item.dataset.page);
+});
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+(function boot() {
+  const session = currentSession();
+  if (session) {
+    ensureSeed();
+    renderApp();
+  } else {
+    $('#loginScreen').classList.remove('hidden');
+    $('#app').classList.add('hidden');
+  }
+})();
+</script>
+</body>
+</html>
