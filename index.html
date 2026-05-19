@@ -1595,24 +1595,41 @@ function shiftWeek(delta) {
 }
 function postWeekly() {
   const start = dateFromISO(currentWeekStart);
-  const labels = [];
-  const facts = {};
-  METRICS.forEach(m => facts[m.id] = []);
-  for (let i = 0; i < 7; i++) {
-    const d = addDays(start, i);
-    const key = isoFromDate(d);
-    labels.push(key.slice(5));
-    const data = getDay(key);
-    METRICS.forEach(m => facts[m.id].push(data?.[m.id]?.fact ?? null));
+  const weekEnd = addDays(start, 6);
+
+  const mondayKey = isoFromDate(start);
+  const sundayKey = isoFromDate(weekEnd);
+
+  // Берём данные воскресенья
+  let weekData = getDay(sundayKey);
+
+  // Если воскресенья ещё нет — берём последний доступный день недели
+  if (!weekData) {
+    for (let i = 6; i >= 0; i--) {
+      const key = isoFromDate(addDays(start, i));
+      const data = getDay(key);
+      if (data) {
+        weekData = data;
+        break;
+      }
+    }
   }
+
+  const labels = [`${mondayKey.slice(5)} — ${sundayKey.slice(5)}`];
+
   const palette = chartPalette();
   const colors = [palette.accent, palette.accent2, palette.green, palette.yellow, palette.red, palette.muted];
+
   chartInstances.week = new Chart($('#chWeek'), {
-    type: 'line',
+    type: 'bar',
     data: {
       labels,
-      datasets: METRICS.map((m,i) => ({
-        label: m.name, data: facts[m.id], borderColor: colors[i%colors.length], tension: .3, pointRadius: 2, fill: false
+      datasets: METRICS.map((m, i) => ({
+        label: m.name,
+        data: [weekData?.[m.id]?.fact ?? null],
+        backgroundColor: colors[i % colors.length],
+        borderColor: colors[i % colors.length],
+        borderWidth: 1
       }))
     },
     options: chartCommon()
