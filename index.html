@@ -650,33 +650,58 @@ async function loadSupabaseDailyReports() {
     saveJSON(STORAGE_KEYS.supabaseReports, data || []);
 
     const all = loadJSON(STORAGE_KEYS.daily, {});
-    (data || []).forEach(report => {
-      const date = report.report_date;
-      if (!date) return;
-      if (!all[date]) all[date] = {};
-      all[date].channel_members = {
-  fact: report.channel_members ?? null,
-  plan: all[date].channel_members?.plan ?? 0,
-  comment: ''
-};
 
-all[date].channel_posts_count = {
-  fact: report.channel_posts_count ?? null,
-  plan: all[date].channel_posts_count?.plan ?? 0,
-  comment: ''
-};
+(data || []).forEach(report => {
+  const date = report.report_date;
 
-all[date].chat_members = {
-  fact: report.chat_members ?? null,
-  plan: all[date].chat_members?.plan ?? 0,
-  comment: ''
-};
+  if (!date) return;
 
-all[date].chat_messages_count = {
-  fact: report.chat_messages_count ?? null,
-  plan: all[date].chat_messages_count?.plan ?? 0,
-  comment: ''
-};
+  if (!all[date]) all[date] = {};
+
+  all[date].channel_new_members_count = {
+    fact: report.channel_new_members_count ?? 0,
+    plan: 0,
+    comment: ''
+  };
+
+  all[date].channel_left_members_count = {
+    fact: report.channel_left_members_count ?? 0,
+    plan: 0,
+    comment: ''
+  };
+
+  all[date].channel_new_members =
+    report.channel_new_members ?? [];
+
+  all[date].channel_left_members =
+    report.channel_left_members ?? [];
+
+  all[date].not_in_chat =
+    report.not_in_chat ?? [];
+
+  all[date].channel_members = {
+    fact: report.channel_members ?? null,
+    plan: all[date].channel_members?.plan ?? 0,
+    comment: ''
+  };
+
+  all[date].channel_posts_count = {
+    fact: report.channel_posts_count ?? null,
+    plan: all[date].channel_posts_count?.plan ?? 0,
+    comment: ''
+  };
+
+  all[date].chat_members = {
+    fact: report.chat_members ?? null,
+    plan: all[date].chat_members?.plan ?? 0,
+    comment: ''
+  };
+
+  all[date].chat_messages_count = {
+    fact: report.chat_messages_count ?? null,
+    plan: all[date].chat_messages_count?.plan ?? 0,
+    comment: ''
+  };
       const parsed = parseFullReportToMetrics(report.full_report);
 
       Object.entries(parsed).forEach(([metricId, fact]) => {
