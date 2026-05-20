@@ -1544,7 +1544,8 @@ function postDaily() {
 let currentWeekStart = null;
 
 function viewChannelMembersAnalytics() {
-  const day = getDay(currentDate) || {};
+  const selectedDate = todayISO();
+  const day = getDay(selectedDate) || {};
 
   const newMembers = day.channel_new_members || [];
   const leftMembers = day.channel_left_members || [];
@@ -1552,23 +1553,14 @@ function viewChannelMembersAnalytics() {
 
   return `
     <div class="panel">
-      <div class="page-title">
-        Аналитика участников канала
-      </div>
-
-      <div class="hint mt-8">
-        Дата: ${currentDate}
-      </div>
+      <div class="page-title">Аналитика участников канала</div>
+      <div class="hint mt-8">Дата: ${selectedDate}</div>
 
       <div class="row cols-3 mt-16">
-
         <div class="kpi">
           <div class="label">Новые участники</div>
           <div class="value">${newMembers.length}</div>
-
-          <button
-            class="btn secondary btn-sm mt-12"
-            onclick="showMemberList('channel_new_members')">
+          <button class="btn secondary btn-sm mt-12" onclick="showMemberList('channel_new_members')">
             Показать список
           </button>
         </div>
@@ -1576,10 +1568,7 @@ function viewChannelMembersAnalytics() {
         <div class="kpi">
           <div class="label">Выбывшие участники</div>
           <div class="value">${leftMembers.length}</div>
-
-          <button
-            class="btn secondary btn-sm mt-12"
-            onclick="showMemberList('channel_left_members')">
+          <button class="btn secondary btn-sm mt-12" onclick="showMemberList('channel_left_members')">
             Показать список
           </button>
         </div>
@@ -1587,32 +1576,19 @@ function viewChannelMembersAnalytics() {
         <div class="kpi">
           <div class="label">Есть в канале, нет в чате</div>
           <div class="value">${notInChat.length}</div>
-
-          <button
-            class="btn secondary btn-sm mt-12"
-            onclick="showMemberList('not_in_chat')">
+          <button class="btn secondary btn-sm mt-12" onclick="showMemberList('not_in_chat')">
             Показать список
           </button>
         </div>
-
       </div>
 
       <div class="panel mt-22" style="background:var(--panel-2);">
+        <div class="page-title" style="font-size:16px;">Все участники канала</div>
+        <div class="hint mt-8">Полный список участников за сегодня</div>
 
-        <div class="page-title" style="font-size:16px;">
-          Все участники канала
-        </div>
-
-        <div class="hint mt-8">
-          Полный список участников за выбранную дату
-        </div>
-
-        <button
-          class="btn secondary btn-sm mt-12"
-          onclick="showChannelMembersForDate()">
+        <button class="btn secondary btn-sm mt-12" onclick="showChannelMembersForDate()">
           Открыть список участников
         </button>
-
       </div>
     </div>
   `;
@@ -2573,46 +2549,155 @@ document.addEventListener('click', e => {
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script>
-  const SUPABASE_URL = "https://frmqhrjydcqsdvwjnqxe.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZybXFocmp5ZGNxc2R2d2pucXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMjE2MDYsImV4cCI6MjA5NDU5NzYwNn0.1ykh5q3lEFzE6YlEuH2qxhTVCH0KcUfVZdCFkOpqrBM";
 
-  const supabaseClient = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_ANON_KEY
-  );
+  function showMemberList(field) {
+  const day = getDay(todayISO()) || {};
+  const list = day[field] || [];
 
-  async function loadReports() {
-    const { data, error } = await supabaseClient
-      .from("daily_reports")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(1);
+  const titles = {
+    channel_new_members: 'Новые участники канала',
+    channel_left_members: 'Выбывшие из канала',
+    not_in_chat: 'Есть в канале, но нет в чате'
+  };
 
-    if (error) {
-      console.error(error);
-      return;
-    }
+  const rows = list.length
+    ? list.map(m => {
+        const username = m.username ? '@' + m.username : 'без username';
+        const name = [m.first_name, m.last_name].filter(Boolean).join(' ');
+        return `<li>${username}${name ? ' — ' + name : ''}</li>`;
+      }).join('')
+    : '<li>Нет данных</li>';
 
-    const report = data[0];
+  showModal(`
+    <div class="modal-backdrop" onclick="closeModal()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="flex between center">
+          <h3>${titles[field] || 'Список участников'}</h3>
+          <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
+        </div>
 
-    if (!report) return;
+        <ul style="margin-top:16px; line-height:1.8; max-height:60vh; overflow:auto;">
+          ${rows}
+        </ul>
+      </div>
+    </div>
+  `);
+}
 
-    document.getElementById("channel_members").textContent =
-      report.channel_members || "—";
+async function showChannelMembersForDate() {
+  const { data, error } = await supabaseClient
+    .from('telegram_members_snapshots')
+    .select('*')
+    .eq('snapshot_date', todayISO())
+    .eq('source', 'channel')
+    .order('username', { ascending: true });
 
-    document.getElementById("channel_posts_count").textContent =
-      report.channel_posts_count || "—";
-
-    document.getElementById("chat_members").textContent =
-      report.chat_members || "—";
-
-    document.getElementById("chat_messages_count").textContent =
-      report.chat_messages_count || "—";
-
-    document.getElementById("full_report").textContent =
-      report.full_report || "";
+  if (error) {
+    console.error(error);
+    toast('Ошибка загрузки участников канала', 'error');
+    return;
   }
 
-  loadReports();
+  const rows = data && data.length
+    ? data.map(m => {
+        const username = m.username ? '@' + m.username : 'без username';
+        const name = [m.first_name, m.last_name].filter(Boolean).join(' ');
+        return `<li>${username}${name ? ' — ' + name : ''}</li>`;
+      }).join('')
+    : '<li>Нет данных за выбранную дату</li>';
+
+  showModal(`
+    <div class="modal-backdrop" onclick="closeModal()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="flex between center">
+          <h3>Все участники канала · ${todayISO()}</h3>
+          <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
+        </div>
+
+        <div class="hint mt-8">
+          Всего участников: ${data ? data.length : 0}
+        </div>
+
+        <ul style="margin-top:16px; line-height:1.8; max-height:60vh; overflow:auto;">
+          ${rows}
+        </ul>
+      </div>
+    </div>
+  `);
+}
+
+function showMemberList(field) {
+  const day = getDay(todayISO()) || {};
+  const list = day[field] || [];
+
+  const titles = {
+    channel_new_members: 'Новые участники канала',
+    channel_left_members: 'Выбывшие из канала',
+    not_in_chat: 'Есть в канале, но нет в чате'
+  };
+
+  const rows = list.length
+    ? list.map(m => {
+        const username = m.username ? '@' + m.username : 'без username';
+        const name = [m.first_name, m.last_name].filter(Boolean).join(' ');
+        return `<li>${username}${name ? ' — ' + name : ''}</li>`;
+      }).join('')
+    : '<li>Нет данных</li>';
+
+  showModal(`
+    <div class="modal-backdrop" onclick="closeModal()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="flex between center">
+          <h3>${titles[field] || 'Список участников'}</h3>
+          <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
+        </div>
+        <ul style="margin-top:16px; line-height:1.8; max-height:60vh; overflow:auto;">
+          ${rows}
+        </ul>
+      </div>
+    </div>
+  `);
+}
+
+async function showChannelMembersForDate() {
+  const { data, error } = await supabaseClient
+    .from('telegram_members_snapshots')
+    .select('*')
+    .eq('snapshot_date', todayISO())
+    .eq('source', 'channel')
+    .order('username', { ascending: true });
+
+  if (error) {
+    console.error(error);
+    toast('Ошибка загрузки участников канала', 'error');
+    return;
+  }
+
+  const rows = data && data.length
+    ? data.map(m => {
+        const username = m.username ? '@' + m.username : 'без username';
+        const name = [m.first_name, m.last_name].filter(Boolean).join(' ');
+        return `<li>${username}${name ? ' — ' + name : ''}</li>`;
+      }).join('')
+    : '<li>Нет данных за выбранную дату</li>';
+
+  showModal(`
+    <div class="modal-backdrop" onclick="closeModal()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="flex between center">
+          <h3>Все участники канала · ${todayISO()}</h3>
+          <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
+        </div>
+        <div class="hint mt-8">
+          Всего участников: ${data ? data.length : 0}
+        </div>
+        <ul style="margin-top:16px; line-height:1.8; max-height:60vh; overflow:auto;">
+          ${rows}
+        </ul>
+      </div>
+    </div>
+  `);
+}
+
 </script>
 </html>
