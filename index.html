@@ -1525,25 +1525,38 @@ function viewWeekly() {
   }
   // aggregate per metric
   const agg = METRICS.map(m => {
-    let sumPlan = 0, sumFact = 0, cnt = 0;
-    days.forEach(d => {
-      const v = d.data?.[m.id];
-      if (v?.plan != null) sumPlan += Number(v.plan);
-      if (v?.fact != null) { sumFact += Number(v.fact); cnt++; }
-    });
-    const avg = cnt > 0 ? (sumFact / cnt) : 0;
-    const st = statusFor(sumPlan, sumFact, { lowerIsBetter: isLowerBetter(m.id) });
-    return { metric: m, sumPlan, sumFact, avg, st };
+  let lastPlan = null;
+  let lastFact = null;
+
+  for (let i = days.length - 1; i >= 0; i--) {
+    const v = days[i].data?.[m.id];
+
+    if (v?.fact != null || v?.plan != null) {
+      lastPlan = v?.plan ?? null;
+      lastFact = v?.fact ?? null;
+      break;
+    }
+  }
+
+  const st = statusFor(lastPlan, lastFact, {
+    lowerIsBetter: isLowerBetter(m.id)
   });
+
+  return {
+    metric: m,
+    lastPlan,
+    lastFact,
+    st
+  };
+});
   const rows = agg.map(a => `
-    <tr>
-      <td>${a.metric.name}</td>
-      <td class="num">${fmtNum(Math.round(a.sumPlan))}</td>
-      <td class="num">${fmtNum(Math.round(a.sumFact))}</td>
-      <td class="num">${fmtNum(Math.round(a.avg))}</td>
-      <td class="num"><span class="pill ${a.st.cls}">${a.st.label}</span></td>
-    </tr>
-  `).join('');
+  <tr>
+    <td>${a.metric.name}</td>
+    <td class="num">${fmtNum(Math.round(a.lastPlan ?? 0))}</td>
+    <td class="num">${fmtNum(Math.round(a.lastFact ?? 0))}</td>
+    <td class="num"><span class="pill ${a.st.cls}">${a.st.label}</span></td>
+  </tr>
+`).join('');
 
   // worst/best metric for insights
   const ranked = [...agg].filter(a => a.st.pct !== null).sort((x,y) => y.st.pct - x.st.pct);
@@ -1565,7 +1578,7 @@ function viewWeekly() {
         <div>
           <div class="scroll-x">
             <table class="tbl">
-              <thead><tr><th>Метрика</th><th class="num">План (сумма)</th><th class="num">Факт (сумма)</th><th class="num">Среднее/день</th><th class="num">% плана</th></tr></thead>
+              <thead><tr><th>Метрика</th><th class="num">План</th><th class="num">Факт за последний день</th><th class="num">% плана</th></tr></thead>
               <tbody>${rows}</tbody>
             </table>
           </div>
