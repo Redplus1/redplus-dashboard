@@ -1543,10 +1543,11 @@ function postDaily() {
    ============================================================ */
 let currentWeekStart = null;
 
-function viewChannelMembersAnalytics() {
-  const selectedDate = todayISO();
-  const day = getDay(selectedDate) || {};
+let membersAnalyticsDate = todayISO();
 
+function viewChannelMembersAnalytics() {
+  const selectedDate = membersAnalyticsDate || todayISO();
+  const day = getDay(selectedDate) || {};
   const newMembers = day.channel_new_members || [];
   const leftMembers = day.channel_left_members || [];
   const notInChat = day.not_in_chat || [];
@@ -1554,7 +1555,21 @@ function viewChannelMembersAnalytics() {
   return `
     <div class="panel">
       <div class="page-title">Аналитика участников канала</div>
-      <div class="hint mt-8">Дата: ${selectedDate}</div>
+
+      <div class="flex gap-12 center mt-8">
+        <div class="field" style="max-width:220px;">
+          <label>Выберите дату</label>
+          <input
+            type="date"
+            value="${selectedDate}"
+            onchange="changeMembersAnalyticsDate(this.value)"
+          />
+        </div>
+
+        <div class="hint">
+          Данные участников за выбранную дату
+        </div>
+      </div>
 
       <div class="row cols-3 mt-16">
         <div class="kpi">
@@ -1584,7 +1599,7 @@ function viewChannelMembersAnalytics() {
 
       <div class="panel mt-22" style="background:var(--panel-2);">
         <div class="page-title" style="font-size:16px;">Все участники канала</div>
-        <div class="hint mt-8">Полный список участников за сегодня</div>
+        <div class="hint mt-8">Полный список участников за выбранную дату</div>
 
         <button class="btn secondary btn-sm mt-12" onclick="showChannelMembersForDate()">
           Открыть список участников
@@ -1594,53 +1609,68 @@ function viewChannelMembersAnalytics() {
   `;
 }
 
+function changeMembersAnalyticsDate(date) {
+  membersAnalyticsDate = date;
+  renderPage('channelMembers');
+}
+
 function viewWeekly() {
   if (!currentWeekStart) currentWeekStart = isoFromDate(startOfWeek(new Date()));
+
   const start = dateFromISO(currentWeekStart);
   const end = addDays(start, 6);
+
   const days = [];
   for (let i = 0; i < 7; i++) {
     const d = addDays(start, i);
-    days.push({ date: isoFromDate(d), data: getDay(isoFromDate(d)) });
+    const key = isoFromDate(d);
+    days.push({
+      date: key,
+      data: getDay(key)
+    });
   }
-  // aggregate per metric
+
   const agg = METRICS.map(m => {
-  let lastPlan = null;
-  let lastFact = null;
+    let lastPlan = null;
+    let lastFact = null;
 
-  for (let i = days.length - 1; i >= 0; i--) {
-    const v = days[i].data?.[m.id];
+    for (let i = days.length - 1; i >= 0; i--) {
+      const v = days[i].data?.[m.id];
 
-    if (v?.fact != null || v?.plan != null) {
-      lastPlan = v?.plan ?? null;
-      lastFact = v?.fact ?? null;
-      break;
+      if (v?.fact != null || v?.plan != null) {
+        lastPlan = v?.plan ?? null;
+        lastFact = v?.fact ?? null;
+        break;
+      }
     }
-  }
 
-  const st = statusFor(lastPlan, lastFact, {
-    lowerIsBetter: isLowerBetter(m.id)
+    const st = statusFor(lastPlan, lastFact, {
+      lowerIsBetter: isLowerBetter(m.id)
+    });
+
+    return {
+      metric: m,
+      lastPlan,
+      lastFact,
+      st
+    };
   });
 
-  return {
-    metric: m,
-    lastPlan,
-    lastFact,
-    st
-  };
-});
   const rows = agg.map(a => `
-  <tr>
-    <td>${a.metric.name}</td>
-    <td class="num">${fmtNum(Math.round(a.lastPlan ?? 0))}</td>
-    <td class="num">${fmtNum(Math.round(a.lastFact ?? 0))}</td>
-    <td class="num"><span class="pill ${a.st.cls}">${a.st.label}</span></td>
-  </tr>
-`).join('');
+    <tr>
+      <td>${a.metric.name}</td>
+      <td class="num">${a.lastPlan == null ? '—' : fmtNum(Math.round(a.lastPlan))}</td>
+      <td class="num">${a.lastFact == null ? '—' : fmtNum(Math.round(a.lastFact))}</td>
+      <td class="num"><span class="pill ${a.st.cls}">${a.st.label}</span></td>
+    </tr>
+  `).join('');
 
-  // worst/best metric for insights
-  const ranked = [...agg].filter(a => a.st.pct !== null).sort((x,y) => y.st.pct - x.st.pct);
-  const best = ranked[0], worst = ranked[ranked.length-1];
+  const ranked = [...agg]
+    .filter(a => a.st.pct !== null)
+    .sort((x, y) => y.st.pct - x.st.pct);
+
+  const best = ranked[0];
+  const worst = ranked[ranked.length - 1];
 
   return `
     <div class="panel">
@@ -1650,42 +1680,59 @@ function viewWeekly() {
           <div class="page-title" style="font-size:16px;">Неделя: ${isoFromDate(start)} — ${isoFromDate(end)}</div>
           <button class="btn secondary btn-sm" onclick="shiftWeek(1)">Следующая →</button>
         </div>
+
         <div class="row-actions">
           <button class="btn ghost btn-sm" onclick="exportWeekCSV()">Экспорт CSV</button>
         </div>
       </div>
+
       <div class="row cols-2 mt-16">
         <div>
           <div class="scroll-x">
             <table class="tbl">
-              <thead><tr><th>Метрика</th><th class="num">План</th><th class="num">Факт за последний день</th><th class="num">% плана</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Метрика</th>
+                  <th class="num">План</th>
+                  <th class="num">Факт за последний день</th>
+                  <th class="num">% плана</th>
+                </tr>
+              </thead>
               <tbody>${rows}</tbody>
             </table>
           </div>
         </div>
-        <div class="chart-wrap"><canvas id="chWeek"></canvas></div>
+
+        <div class="chart-wrap">
+          <canvas id="chWeek"></canvas>
+        </div>
       </div>
+
       ${best && worst ? `
-      <div class="row cols-2 mt-22">
-        <div class="panel" style="background:var(--panel-2);">
-          <div class="hint">Лучшая метрика недели</div>
-          <div style="font-size:18px;font-weight:700;margin-top:6px;">${best.metric.name}</div>
-          <div class="pill ${best.st.cls}" style="margin-top:6px;">${best.st.label}</div>
+        <div class="row cols-2 mt-22">
+          <div class="panel" style="background:var(--panel-2);">
+            <div class="hint">Лучшая метрика недели</div>
+            <div style="font-size:18px;font-weight:700;margin-top:6px;">${best.metric.name}</div>
+            <div class="pill ${best.st.cls}" style="margin-top:6px;">${best.st.label}</div>
+          </div>
+
+          <div class="panel" style="background:var(--panel-2);">
+            <div class="hint">Худшая метрика недели</div>
+            <div style="font-size:18px;font-weight:700;margin-top:6px;">${worst.metric.name}</div>
+            <div class="pill ${worst.st.cls}" style="margin-top:6px;">${worst.st.label}</div>
+          </div>
         </div>
-        <div class="panel" style="background:var(--panel-2);">
-          <div class="hint">Худшая метрика недели</div>
-          <div style="font-size:18px;font-weight:700;margin-top:6px;">${worst.metric.name}</div>
-          <div class="pill ${worst.st.cls}" style="margin-top:6px;">${worst.st.label}</div>
-        </div>
-      </div>` : ''}
+      ` : ''}
     </div>
   `;
 }
+
 function shiftWeek(delta) {
   const start = dateFromISO(currentWeekStart);
-  currentWeekStart = isoFromDate(addDays(start, 7*delta));
+  currentWeekStart = isoFromDate(addDays(start, 7 * delta));
   renderPage('weekly');
 }
+
 function postWeekly() {
   const start = dateFromISO(currentWeekStart);
   const weekEnd = addDays(start, 6);
@@ -1693,14 +1740,13 @@ function postWeekly() {
   const mondayKey = isoFromDate(start);
   const sundayKey = isoFromDate(weekEnd);
 
-  // Берём данные воскресенья
   let weekData = getDay(sundayKey);
 
-  // Если воскресенья ещё нет — берём последний доступный день недели
   if (!weekData) {
     for (let i = 6; i >= 0; i--) {
       const key = isoFromDate(addDays(start, i));
       const data = getDay(key);
+
       if (data) {
         weekData = data;
         break;
@@ -1711,7 +1757,14 @@ function postWeekly() {
   const labels = [`${mondayKey.slice(5)} — ${sundayKey.slice(5)}`];
 
   const palette = chartPalette();
-  const colors = [palette.accent, palette.accent2, palette.green, palette.yellow, palette.red, palette.muted];
+  const colors = [
+    palette.accent,
+    palette.accent2,
+    palette.green,
+    palette.yellow,
+    palette.red,
+    palette.muted
+  ];
 
   chartInstances.week = new Chart($('#chWeek'), {
     type: 'bar',
@@ -1728,20 +1781,33 @@ function postWeekly() {
     options: chartCommon()
   });
 }
+
 function exportWeekCSV() {
   const start = dateFromISO(currentWeekStart);
-  let csv = 'date,' + METRICS.map(m => `${m.id}_plan,${m.id}_fact,${m.id}_var`).join(',') + '\n';
+
+  let csv =
+    'date,' +
+    METRICS.map(m => `${m.id}_plan,${m.id}_fact,${m.id}_var`).join(',') +
+    '\n';
+
   for (let i = 0; i < 7; i++) {
     const d = addDays(start, i);
     const key = isoFromDate(d);
     const data = getDay(key) || {};
     const row = [key];
+
     METRICS.forEach(m => {
       const v = data[m.id] || {};
-      row.push(v.plan ?? '', v.fact ?? '', metricVariance(v.plan, v.fact) ?? '');
+      row.push(
+        v.plan ?? '',
+        v.fact ?? '',
+        metricVariance(v.plan, v.fact) ?? ''
+      );
     });
+
     csv += row.join(',') + '\n';
   }
+
   downloadFile(`week_${isoFromDate(start)}.csv`, csv, 'text/csv');
 }
 
@@ -1749,42 +1815,74 @@ function exportWeekCSV() {
    MONTHLY
    ============================================================ */
 let currentMonth = null;
+
 function viewMonthly() {
   if (!currentMonth) currentMonth = monthKey(new Date());
+
   const [y, m] = currentMonth.split('-').map(Number);
-  const first = new Date(y, m-1, 1);
   const last = new Date(y, m, 0);
   const daysInMonth = last.getDate();
 
   const days = [];
-  let bestDay = null, worstDay = null;
+  let bestDay = null;
+  let worstDay = null;
+
   for (let i = 1; i <= daysInMonth; i++) {
-    const d = new Date(y, m-1, i);
+    const d = new Date(y, m - 1, i);
     const key = isoFromDate(d);
     const data = getDay(key);
-    days.push({ date: key, data });
-    // best/worst by channel fact growth
+
+    days.push({
+      date: key,
+      data
+    });
+
     if (data?.channel_members?.fact != null && data?.channel_members?.plan) {
       const r = data.channel_members.fact / data.channel_members.plan;
+
       if (!bestDay || r > bestDay.r) bestDay = { key, r };
       if (!worstDay || r < worstDay.r) worstDay = { key, r };
     }
   }
 
   const agg = METRICS.map(mt => {
-    let sumPlan = 0, sumFact = 0, cnt = 0, firstFact=null, lastFact=null;
+    let sumPlan = 0;
+    let sumFact = 0;
+    let cnt = 0;
+    let firstFact = null;
+    let lastFact = null;
+
     days.forEach(d => {
       const v = d.data?.[mt.id];
+
       if (v?.plan != null) sumPlan += Number(v.plan);
+
       if (v?.fact != null) {
-        sumFact += Number(v.fact); cnt++;
-        if (firstFact===null) firstFact = Number(v.fact);
+        sumFact += Number(v.fact);
+        cnt++;
+
+        if (firstFact === null) firstFact = Number(v.fact);
         lastFact = Number(v.fact);
       }
     });
-    const trend = (firstFact!=null && lastFact!=null) ? (lastFact - firstFact) : 0;
-    const st = statusFor(sumPlan, sumFact, { lowerIsBetter: isLowerBetter(mt.id) });
-    return { metric: mt, sumPlan, sumFact, avg: cnt?sumFact/cnt:0, trend, st };
+
+    const trend =
+      firstFact != null && lastFact != null
+        ? lastFact - firstFact
+        : 0;
+
+    const st = statusFor(sumPlan, sumFact, {
+      lowerIsBetter: isLowerBetter(mt.id)
+    });
+
+    return {
+      metric: mt,
+      sumPlan,
+      sumFact,
+      avg: cnt ? sumFact / cnt : 0,
+      trend,
+      st
+    };
   });
 
   const rows = agg.map(a => `
@@ -1793,15 +1891,21 @@ function viewMonthly() {
       <td class="num">${fmtNum(Math.round(a.sumPlan))}</td>
       <td class="num">${fmtNum(Math.round(a.sumFact))}</td>
       <td class="num">${fmtNum(Math.round(a.avg))}</td>
-      <td class="num">${a.trend>=0?'▲':'▼'} ${fmtNum(Math.abs(Math.round(a.trend)))}</td>
+      <td class="num">${a.trend >= 0 ? '▲' : '▼'} ${fmtNum(Math.abs(Math.round(a.trend)))}</td>
       <td class="num"><span class="pill ${a.st.cls}">${a.st.label}</span></td>
     </tr>
   `).join('');
 
-  // overall KPI = avg of pct
-  const pcts = agg.filter(a => a.st.pct !== null).map(a => a.st.pct);
-  const overall = pcts.length ? Math.round(pcts.reduce((s,x)=>s+x,0) / pcts.length) : 0;
-  const overallCls = overall >= 97 ? 'green' : overall >= 85 ? 'yellow' : 'red';
+  const pcts = agg
+    .filter(a => a.st.pct !== null)
+    .map(a => a.st.pct);
+
+  const overall = pcts.length
+    ? Math.round(pcts.reduce((s, x) => s + x, 0) / pcts.length)
+    : 0;
+
+  const overallCls =
+    overall >= 97 ? 'green' : overall >= 85 ? 'yellow' : 'red';
 
   return `
     <div class="panel">
@@ -1811,6 +1915,7 @@ function viewMonthly() {
           <div class="page-title" style="font-size:16px;">Месяц: ${monthLabel(currentMonth)}</div>
           <button class="btn secondary btn-sm" onclick="shiftMonth(1)">Следующий →</button>
         </div>
+
         <div class="row-actions">
           <button class="btn ghost btn-sm" onclick="exportMonthCSV()">Экспорт CSV</button>
         </div>
@@ -1823,11 +1928,13 @@ function viewMonthly() {
           <div class="delta"><span class="hint">Средний % по метрикам</span></div>
           <div class="bar"><span style="width:${Math.min(100, overall)}%"></span></div>
         </div>
+
         <div class="kpi">
           <div class="label">Лучший день месяца</div>
           <div class="value">${bestDay ? bestDay.key : '—'}</div>
           <div class="delta"><span class="hint">По выполнению плана подписчиков</span></div>
         </div>
+
         <div class="kpi">
           <div class="label">Худший день месяца</div>
           <div class="value">${worstDay ? worstDay.key : '—'}</div>
@@ -1839,69 +1946,142 @@ function viewMonthly() {
         <div>
           <div class="scroll-x">
             <table class="tbl">
-              <thead><tr><th>Метрика</th><th class="num">План</th><th class="num">Факт</th><th class="num">Среднее/день</th><th class="num">Тренд</th><th class="num">% плана</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Метрика</th>
+                  <th class="num">План</th>
+                  <th class="num">Факт</th>
+                  <th class="num">Среднее/день</th>
+                  <th class="num">Тренд</th>
+                  <th class="num">% плана</th>
+                </tr>
+              </thead>
               <tbody>${rows}</tbody>
             </table>
           </div>
         </div>
-        <div class="chart-wrap"><canvas id="chMonth"></canvas></div>
+
+        <div class="chart-wrap">
+          <canvas id="chMonth"></canvas>
+        </div>
       </div>
     </div>
   `;
 }
+
 function shiftMonth(delta) {
-  const [y,m] = currentMonth.split('-').map(Number);
-  const d = new Date(y, m-1+delta, 1);
+  const [y, m] = currentMonth.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+
   currentMonth = monthKey(d);
   renderPage('monthly');
 }
+
 function postMonthly() {
-  const [y,m] = currentMonth.split('-').map(Number);
+  const [y, m] = currentMonth.split('-').map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
-  const labels = [], chanFact = [], chanPlan = [], newF = [];
+
+  const labels = [];
+  const chanFact = [];
+  const chanPlan = [];
+  const newF = [];
+
   for (let i = 1; i <= daysInMonth; i++) {
-    const key = isoFromDate(new Date(y, m-1, i));
+    const key = isoFromDate(new Date(y, m - 1, i));
     labels.push(String(i));
+
     const d = getDay(key);
+
     chanFact.push(d?.channel_members?.fact ?? null);
     chanPlan.push(d?.channel_members?.plan ?? null);
-    newF.push(d?.new_members?.fact ?? null);
+    newF.push(d?.channel_new_members_count?.fact ?? null);
   }
+
   const p = chartPalette();
+
   chartInstances.month = new Chart($('#chMonth'), {
     type: 'line',
     data: {
       labels,
       datasets: [
-        { label: 'Канал (факт)', data: chanFact, borderColor: p.accent, backgroundColor: p.accent+'33', tension: .25, fill: true, pointRadius: 0 },
-        { label: 'Канал (план)', data: chanPlan, borderColor: p.muted, borderDash: [5,5], tension: .25, pointRadius: 0, fill: false },
-        { label: 'Новые',        data: newF,    borderColor: p.green,  tension: .25, pointRadius: 0, fill: false, yAxisID: 'y1' }
+        {
+          label: 'Канал (факт)',
+          data: chanFact,
+          borderColor: p.accent,
+          backgroundColor: p.accent + '33',
+          tension: .25,
+          fill: true,
+          pointRadius: 0
+        },
+        {
+          label: 'Канал (план)',
+          data: chanPlan,
+          borderColor: p.muted,
+          borderDash: [5, 5],
+          tension: .25,
+          pointRadius: 0,
+          fill: false
+        },
+        {
+          label: 'Новые',
+          data: newF,
+          borderColor: p.green,
+          tension: .25,
+          pointRadius: 0,
+          fill: false,
+          yAxisID: 'y1'
+        }
       ]
     },
     options: {
       ...chartCommon(),
       scales: {
-        x: { ticks: { color: p.muted }, grid: { color: p.grid } },
-        y: { ticks: { color: p.muted }, grid: { color: p.grid }, position: 'left' },
-        y1: { ticks: { color: p.muted }, grid: { display: false }, position: 'right' }
+        x: {
+          ticks: { color: p.muted },
+          grid: { color: p.grid }
+        },
+        y: {
+          ticks: { color: p.muted },
+          grid: { color: p.grid },
+          position: 'left'
+        },
+        y1: {
+          ticks: { color: p.muted },
+          grid: { display: false },
+          position: 'right'
+        }
       }
     }
   });
 }
+
 function exportMonthCSV() {
-  const [y,m] = currentMonth.split('-').map(Number);
+  const [y, m] = currentMonth.split('-').map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
-  let csv = 'date,' + METRICS.map(mt => `${mt.id}_plan,${mt.id}_fact,${mt.id}_var,${mt.id}_comment`).join(',') + '\n';
+
+  let csv =
+    'date,' +
+    METRICS.map(mt => `${mt.id}_plan,${mt.id}_fact,${mt.id}_var,${mt.id}_comment`).join(',') +
+    '\n';
+
   for (let i = 1; i <= daysInMonth; i++) {
-    const key = isoFromDate(new Date(y, m-1, i));
+    const key = isoFromDate(new Date(y, m - 1, i));
     const data = getDay(key) || {};
     const row = [key];
+
     METRICS.forEach(mt => {
       const v = data[mt.id] || {};
-      row.push(v.plan ?? '', v.fact ?? '', metricVariance(v.plan, v.fact) ?? '', `"${(v.comment||'').replace(/"/g,'""')}"`);
+      row.push(
+        v.plan ?? '',
+        v.fact ?? '',
+        metricVariance(v.plan, v.fact) ?? '',
+        `"${(v.comment || '').replace(/"/g, '""')}"`
+      );
     });
+
     csv += row.join(',') + '\n';
   }
+
   downloadFile(`month_${currentMonth}.csv`, csv, 'text/csv');
 }
 
@@ -2550,8 +2730,9 @@ document.addEventListener('click', e => {
 
 <script>
 
-  function showMemberList(field) {
-  const day = getDay(todayISO()) || {};
+function showMemberList(field) {
+  const selectedDate = membersAnalyticsDate || todayISO();
+  const day = getDay(selectedDate) || {};
   const list = day[field] || [];
 
   const titles = {
@@ -2560,11 +2741,19 @@ document.addEventListener('click', e => {
     not_in_chat: 'Есть в канале, но нет в чате'
   };
 
+  const listId = `memberList_${field}`;
+
   const rows = list.length
     ? list.map(m => {
         const username = m.username ? '@' + m.username : 'без username';
         const name = [m.first_name, m.last_name].filter(Boolean).join(' ');
-        return `<li>${username}${name ? ' — ' + name : ''}</li>`;
+        const searchText = `${username} ${name}`.toLowerCase();
+
+        return `
+          <li data-search="${searchText}">
+            ${username}${name ? ' — ' + name : ''}
+          </li>
+        `;
       }).join('')
     : '<li>Нет данных</li>';
 
@@ -2572,16 +2761,42 @@ document.addEventListener('click', e => {
     <div class="modal-backdrop" onclick="closeModal()">
       <div class="modal" onclick="event.stopPropagation()">
         <div class="flex between center">
-          <h3>${titles[field] || 'Список участников'}</h3>
+          <h3>${titles[field] || 'Список участников'} · ${selectedDate}</h3>
           <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
         </div>
 
-        <ul style="margin-top:16px; line-height:1.8; max-height:60vh; overflow:auto;">
+        <div class="field mt-12">
+          <label>Поиск по username или имени</label>
+          <input
+            type="text"
+            placeholder="Введите username или имя"
+            oninput="filterMemberList('${listId}', this.value)"
+          />
+        </div>
+
+        <div class="hint mt-8">
+          Всего: ${list.length}
+        </div>
+
+        <ul id="${listId}" style="margin-top:16px; line-height:1.8; max-height:60vh; overflow:auto;">
           ${rows}
         </ul>
       </div>
     </div>
   `);
+}
+
+function filterMemberList(listId, query) {
+  const list = document.getElementById(listId);
+  if (!list) return;
+
+  const q = String(query || '').toLowerCase().trim();
+  const items = Array.from(list.querySelectorAll('li'));
+
+  items.forEach(item => {
+    const text = item.getAttribute('data-search') || item.textContent.toLowerCase();
+    item.style.display = text.includes(q) ? '' : 'none';
+  });
 }
 
 async function showChannelMembersForDate() {
@@ -2618,39 +2833,6 @@ async function showChannelMembersForDate() {
           Всего участников: ${data ? data.length : 0}
         </div>
 
-        <ul style="margin-top:16px; line-height:1.8; max-height:60vh; overflow:auto;">
-          ${rows}
-        </ul>
-      </div>
-    </div>
-  `);
-}
-
-function showMemberList(field) {
-  const day = getDay(todayISO()) || {};
-  const list = day[field] || [];
-
-  const titles = {
-    channel_new_members: 'Новые участники канала',
-    channel_left_members: 'Выбывшие из канала',
-    not_in_chat: 'Есть в канале, но нет в чате'
-  };
-
-  const rows = list.length
-    ? list.map(m => {
-        const username = m.username ? '@' + m.username : 'без username';
-        const name = [m.first_name, m.last_name].filter(Boolean).join(' ');
-        return `<li>${username}${name ? ' — ' + name : ''}</li>`;
-      }).join('')
-    : '<li>Нет данных</li>';
-
-  showModal(`
-    <div class="modal-backdrop" onclick="closeModal()">
-      <div class="modal" onclick="event.stopPropagation()">
-        <div class="flex between center">
-          <h3>${titles[field] || 'Список участников'}</h3>
-          <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
-        </div>
         <ul style="margin-top:16px; line-height:1.8; max-height:60vh; overflow:auto;">
           ${rows}
         </ul>
