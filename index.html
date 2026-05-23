@@ -378,7 +378,8 @@ const STORAGE_KEYS = {
   history: 'rplus.history.v1',  // [{ts, user, date, metric, field, oldValue, newValue}]
   session: 'rplus.session.v1',  // {user, role}
   theme: 'rplus.theme.v1',
-  supabaseReports: 'rplus.supabase_reports.v1'
+  supabaseReports: 'rplus.supabase_reports.v1',
+  weeklyPlans: 'rplus.weekly_plans.v1',
 };
 
 
@@ -729,6 +730,29 @@ async function loadSupabaseDailyReports() {
   }
 }
 
+async function loadSupabaseWeeklyPlans() {
+  try {
+    const { data, error } = await supabaseClient
+      .from('weekly_plans')
+      .select('*')
+      .order('week_start', { ascending: false });
+
+    if (error) {
+      console.error('Ошибка загрузки weekly_plans:', error);
+      return [];
+    }
+
+    saveJSON(STORAGE_KEYS.weeklyPlans, data || []);
+
+    console.log('Supabase weekly_plans загружены:', data);
+
+    return data || [];
+  } catch (e) {
+    console.error('Непредвиденная ошибка Supabase weekly_plans:', e);
+    return [];
+  }
+}
+
 function latestDailyDate() {
   const all = loadJSON(STORAGE_KEYS.daily, {});
   const dates = Object.keys(all).filter(Boolean).sort();
@@ -805,11 +829,28 @@ function setActiveNav(page) {
 function renderApp() {
   $('#loginScreen').classList.add('hidden');
   $('#app').classList.remove('hidden');
+
   const s = currentSession();
-  $('#roleBadge').textContent = `${s.user} · ${s.role === 'admin' ? 'Администратор' : s.role === 'analyst' ? 'Аналитик' : 'Viewer'}`;
+
+  $('#roleBadge').textContent =
+    `${s.user} · ${
+      s.role === 'admin'
+        ? 'Администратор'
+        : s.role === 'analyst'
+        ? 'Аналитик'
+        : 'Viewer'
+    }`;
+
   renderPage('dashboard');
-  loadSupabaseDailyReports().then(() => renderPage(currentPage));
+
+  Promise.all([
+    loadSupabaseDailyReports(),
+    loadSupabaseWeeklyPlans()
+  ]).then(() => {
+    renderPage(currentPage);
+  });
 }
+
 function renderPage(page) {
   destroyCharts();
   currentPage = page;
@@ -1620,10 +1661,23 @@ function viewWeekly() {
   const start = dateFromISO(currentWeekStart);
   const end = addDays(start, 6);
 
+  const weeklyPlans = loadJSON(STORAGE_KEYS.weeklyPlans, []);
+
+  const currentPlan = weeklyPlans.find(p =>
+    p.week_start === isoFromDate(start)
+  ) || {};
+
+  const retentionPlan = currentPlan.retention_plan || '—';
+  const acquisitionPlan = currentPlan.acquisition_plan || '—';
+  const retentionFact = currentPlan.retention_fact || '—';
+  const acquisitionFact = currentPlan.acquisition_fact || '—';
+
   const days = [];
+
   for (let i = 0; i < 7; i++) {
     const d = addDays(start, i);
     const key = isoFromDate(d);
+
     days.push({
       date: key,
       data: getDay(key)
@@ -1662,6 +1716,11 @@ function viewWeekly() {
       <td class="num">${a.lastPlan == null ? '—' : fmtNum(Math.round(a.lastPlan))}</td>
       <td class="num">${a.lastFact == null ? '—' : fmtNum(Math.round(a.lastFact))}</td>
       <td class="num"><span class="pill ${a.st.cls}">${a.st.label}</span></td>
+      <td style="min-width:220px; white-space:pre-wrap;">${escapeHtml(retentionPlan)}</td>
+      <td style="min-width:220px; white-space:pre-wrap;">${escapeHtml(acquisitionPlan)}</td>
+      <td style="min-width:220px; white-space:pre-wrap;">${escapeHtml(retentionFact)}</td>
+      <td style="min-width:220px; white-space:pre-wrap;">${escapeHtml(acquisitionFact)}</td>
+      <td class="num">${a.lastFact == null ? '—' : fmtNum(Math.round(a.lastFact))}</td>
     </tr>
   `).join('');
 
@@ -1696,6 +1755,11 @@ function viewWeekly() {
                   <th class="num">План</th>
                   <th class="num">Факт за последний день</th>
                   <th class="num">% плана</th>
+                  <th>План на удержание</th>
+                  <th>План на привлечение</th>
+                  <th>Факт на удержание</th>
+                  <th>Факт на привлечение</th>
+                  <th class="num">Факт</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
