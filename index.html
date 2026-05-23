@@ -1305,25 +1305,23 @@ function viewDaily() {
   const rows = dates.map(date => {
     const day = all[date] || {};
     const v = day[dailyMetric] || {};
-    const plan = v.plan, fact = v.fact;
-    const dev = (plan != null && fact != null) ? (Number(fact) - Number(plan)) : null;
-    const pct = (plan && plan > 0 && fact != null) ? Math.round((Number(fact) / Number(plan)) * 100) : null;
-    const lowerBetter = isLowerBetter(dailyMetric);
-    let pctCls = '';
-    if (pct != null) {
-      const ratio = pct / 100;
-      if (lowerBetter) pctCls = ratio <= 1 ? 'good-cell' : ratio <= 1.15 ? 'warn-cell' : 'bad-cell';
-      else pctCls = ratio >= 0.97 ? 'good-cell' : ratio >= 0.85 ? 'warn-cell' : 'bad-cell';
-    }
-    const factBg = pctCls ? ('cell-fact-' + pctCls.replace('-cell','').replace('good','good').replace('warn','warn').replace('bad','bad')) : '';
+    const fact = v.fact;
+
+    const prevDate = isoFromDate(addDays(dateFromISO(date), -1));
+    const prevDay = all[prevDate] || {};
+    const prevFact = prevDay[dailyMetric]?.fact;
+
+    const dev =
+      fact != null && prevFact != null
+        ? Number(fact) - Number(prevFact)
+        : null;
+    const factBg = '';
     const isToday = date === todayISO();
     return `
       <tr data-date="${date}">
         <td><b>${date}</b>${isToday ? ' <span class="pill green">сегодня</span>' : ''}</td>
-        <td class="num cell-num"><input class="cell-input tbl-plan" type="number" value="${plan ?? ''}" ${disabled} /></td>
         <td class="num cell-num ${factBg}"><input class="cell-input tbl-fact" type="number" value="${fact ?? ''}" ${disabled} /></td>
         <td class="num cell-dev ${dev == null ? '' : dev >= 0 ? 'pos' : 'neg'}">${dev == null ? '—' : (dev >= 0 ? '+' : '') + fmtNum(dev)}</td>
-        <td class="num cell-pct ${pctCls}">${pct == null ? '—' : pct + '%'}</td>
         <td><input class="cell-input tbl-comment" value="${escapeHtml(v.comment||'')}" placeholder="—" ${disabled} /></td>
         <td>
           <div class="row-actions">
@@ -1357,7 +1355,7 @@ function viewDaily() {
         </div>
       </div>
       <div class="hint mt-12">
-        Inline-редактор · автосохранение · отклонение = факт − план · % = факт/план × 100% · цветовая индикация выполнения.
+        Inline-редактор · автосохранение · отклонение = факт текущего дня − факт предыдущего дня.
         Текущая метрика: <b>${mObj?.name || dailyMetric}</b>${isLowerBetter(dailyMetric) ? ' (меньше — лучше)' : ''}.
       </div>
 
@@ -1365,14 +1363,12 @@ function viewDaily() {
         <table class="tbl tbl-editor">
           <thead><tr>
             <th>Дата</th>
-            <th class="num" style="width:120px;">План</th>
             <th class="num" style="width:120px;">Факт</th>
-            <th class="num" style="width:110px;">Отклонение</th>
-            <th class="num" style="width:110px;">% плана</th>
+            <th class="num" style="width:140px;">Отклонение от вчера</th>
             <th>Комментарий</th>
             <th style="width:120px;">Действия</th>
           </tr></thead>
-          <tbody>${rows || '<tr><td colspan="7" class="hint" style="text-align:center;padding:20px;">Нет данных в диапазоне</td></tr>'}</tbody>
+          <tbody>${rows || '<tr><td colspan="5" class="hint" style="text-align:center;padding:20px;">Нет данных в диапазоне</td></tr>'}</tbody>
         </table>
       </div>
     </div>
@@ -1389,20 +1385,61 @@ function tableRecentRange(startISO, endISO) {
   const dates = [];
   let cur = dateFromISO(startISO);
   const endD = dateFromISO(endISO);
-  while (cur <= endD) { dates.push(isoFromDate(cur)); cur = addDays(cur, 1); }
+
+  while (cur <= endD) {
+    dates.push(isoFromDate(cur));
+    cur = addDays(cur, 1);
+  }
+
   dates.reverse();
+
   const header = METRICS.map(m => `<th class="num">${m.name}</th>`).join('');
+
   const rows = dates.map(d => {
     const data = getDay(d);
-    if (!data) return `<tr><td>${d}</td>${METRICS.map(_=>'<td class="num">—</td>').join('')}</tr>`;
+
+    if (!data) {
+      return `<tr><td>${d}</td>${METRICS.map(_ => '<td class="num">—</td>').join('')}</tr>`;
+    }
+
+    const prevDate = isoFromDate(addDays(dateFromISO(d), -1));
+    const prevData = getDay(prevDate) || {};
+
     const cells = METRICS.map(m => {
       const v = data[m.id] || {};
-      const st = statusFor(v.plan, v.fact, { lowerIsBetter: isLowerBetter(m.id) });
-      return `<td class="num">${fmtNum(v.fact)} <span class="pill ${st.cls}">${st.label}</span></td>`;
+      const fact = v.fact;
+
+      const prevFact = prevData[m.id]?.fact;
+
+      const dev =
+        fact != null && prevFact != null
+          ? Number(fact) - Number(prevFact)
+          : null;
+
+      return `
+        <td class="num">
+          <div>${fmtNum(fact)}</div>
+          <div class="${dev == null ? 'hint' : dev >= 0 ? 'pos' : 'neg'}" style="font-size:12px;">
+            ${dev == null ? '—' : (dev >= 0 ? '+' : '') + fmtNum(dev)}
+          </div>
+        </td>
+      `;
     }).join('');
+
     return `<tr><td>${d}</td>${cells}</tr>`;
   }).join('');
-  return `<table class="tbl"><thead><tr><th>Дата</th>${header}</tr></thead><tbody>${rows}</tbody></table>`;
+
+  return `
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Дата</th>
+          ${header}
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
 }
 
 function onDailyMetricChange(v) { dailyMetric = v; renderPage('daily'); }
@@ -1526,53 +1563,71 @@ function saveDayCard(date) {
 
 function postDaily() {
   if (isViewer()) return;
+
   $$('#content .tbl-editor tbody tr[data-date]').forEach(tr => {
     const date = tr.dataset.date;
-    const plan = tr.querySelector('.tbl-plan');
     const fact = tr.querySelector('.tbl-fact');
     const comment = tr.querySelector('.tbl-comment');
-    if (!plan) return;
+
+    if (!fact) return;
+
     const devCell = tr.querySelector('.cell-dev');
-    const pctCell = tr.querySelector('.cell-pct');
-    const factCell = fact.closest('td');
+
     let timer = null;
+
     const recalc = () => {
-      const planV = plan.value === '' ? null : Number(plan.value);
       const factV = fact.value === '' ? null : Number(fact.value);
-      const dev = (planV != null && factV != null) ? factV - planV : null;
-      const pct = (planV && planV > 0 && factV != null) ? Math.round(factV/planV*100) : null;
-      devCell.textContent = dev == null ? '—' : (dev >= 0 ? '+' : '') + fmtNum(dev);
-      devCell.className = 'num cell-dev ' + (dev == null ? '' : dev >= 0 ? 'pos' : 'neg');
-      let pctCls = '';
-      if (pct != null) {
-        const ratio = pct / 100;
-        if (isLowerBetter(dailyMetric)) pctCls = ratio <= 1 ? 'good-cell' : ratio <= 1.15 ? 'warn-cell' : 'bad-cell';
-        else pctCls = ratio >= 0.97 ? 'good-cell' : ratio >= 0.85 ? 'warn-cell' : 'bad-cell';
-      }
-      pctCell.textContent = pct == null ? '—' : pct + '%';
-      pctCell.className = 'num cell-pct ' + pctCls;
-      factCell.classList.remove('cell-fact-good','cell-fact-warn','cell-fact-bad');
-      if (pctCls) factCell.classList.add(pctCls.replace('-cell','').replace(/^/, 'cell-fact-'));
+
+      const all = loadJSON(STORAGE_KEYS.daily, {});
+      const prevDate = isoFromDate(addDays(dateFromISO(date), -1));
+      const prevFact = all[prevDate]?.[dailyMetric]?.fact;
+
+      const dev =
+        factV != null && prevFact != null
+          ? factV - Number(prevFact)
+          : null;
+
+      devCell.textContent =
+        dev == null ? '—' : (dev >= 0 ? '+' : '') + fmtNum(dev);
+
+      devCell.className =
+        'num cell-dev ' + (dev == null ? '' : dev >= 0 ? 'pos' : 'neg');
     };
-    [plan, fact].forEach(inp => inp.addEventListener('input', recalc));
-    [plan, fact, comment].forEach(inp => inp.addEventListener('input', () => {
+
+    fact.addEventListener('input', recalc);
+
+    [fact, comment].forEach(inp => inp.addEventListener('input', () => {
       clearTimeout(timer);
+
       timer = setTimeout(() => {
         const all = loadJSON(STORAGE_KEYS.daily, {});
+
         if (!all[date]) all[date] = {};
+
         const prev = all[date][dailyMetric] || {};
+
         const next = {
-          plan: plan.value === '' ? null : Number(plan.value),
+          plan: prev.plan ?? null,
           fact: fact.value === '' ? null : Number(fact.value),
           comment: comment.value
         };
-        ['plan','fact','comment'].forEach(f => {
+
+        ['fact', 'comment'].forEach(f => {
           if ((prev[f] ?? null) !== (next[f] ?? null)) {
-            recordHistory({ date, metric: dailyMetric, field: f, oldValue: prev[f] ?? null, newValue: next[f] ?? null });
+            recordHistory({
+              date,
+              metric: dailyMetric,
+              field: f,
+              oldValue: prev[f] ?? null,
+              newValue: next[f] ?? null
+            });
           }
         });
+
         all[date][dailyMetric] = next;
+
         saveJSON(STORAGE_KEYS.daily, all);
+
         toast('Сохранено · ' + date);
       }, 500);
     }));
@@ -1672,6 +1727,12 @@ function viewWeekly() {
   const retentionFact = currentPlan.retention_fact || '—';
   const acquisitionFact = currentPlan.acquisition_fact || '—';
 
+  const weeklySumMetrics = [
+    'channel_new_members_count',
+    'channel_left_members_count',
+    'chat_messages_count'
+  ];
+
   const days = [];
 
   for (let i = 0; i < 7; i++) {
@@ -1688,13 +1749,33 @@ function viewWeekly() {
     let lastPlan = null;
     let lastFact = null;
 
-    for (let i = days.length - 1; i >= 0; i--) {
-      const v = days[i].data?.[m.id];
+    if (weeklySumMetrics.includes(m.id)) {
+      let sumFact = 0;
+      let hasFact = false;
 
-      if (v?.fact != null || v?.plan != null) {
-        lastPlan = v?.plan ?? null;
-        lastFact = v?.fact ?? null;
-        break;
+      for (let i = 0; i < days.length; i++) {
+        const v = days[i].data?.[m.id];
+
+        if (v?.fact != null) {
+          sumFact += Number(v.fact);
+          hasFact = true;
+        }
+
+        if (v?.plan != null) {
+          lastPlan = v.plan;
+        }
+      }
+
+      lastFact = hasFact ? sumFact : null;
+    } else {
+      for (let i = days.length - 1; i >= 0; i--) {
+        const v = days[i].data?.[m.id];
+
+        if (v?.fact != null || v?.plan != null) {
+          lastPlan = v?.plan ?? null;
+          lastFact = v?.fact ?? null;
+          break;
+        }
       }
     }
 
@@ -1753,7 +1834,7 @@ function viewWeekly() {
                 <tr>
                   <th>Метрика</th>
                   <th class="num">План</th>
-                  <th class="num">Факт за последний день</th>
+                  <th class="num">Факт за неделю / последний день</th>
                   <th class="num">% плана</th>
                   <th>План на удержание</th>
                   <th>План на привлечение</th>
