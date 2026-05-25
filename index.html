@@ -1722,15 +1722,38 @@ function viewWeekly() {
     p.week_start === isoFromDate(start)
   ) || {};
 
-  const retentionPlan = currentPlan.retention_plan || '—';
-  const acquisitionPlan = currentPlan.acquisition_plan || '—';
-  const retentionFact = currentPlan.retention_fact || '—';
-  const acquisitionFact = currentPlan.acquisition_fact || '—';
+  const weeklyPlanFactFields = {
+    chat_members: {
+      plan: 'chat_members_plan',
+      fact: 'chat_members_fact'
+    },
+    channel_members: {
+      plan: 'channel_members_plan',
+      fact: 'channel_members_fact'
+    },
+    channel_new_members_count: {
+      plan: 'channel_new_members_count_plan',
+      fact: 'channel_new_members_count_fact'
+    },
+    channel_left_members_count: {
+      plan: 'channel_left_members_count_plan',
+      fact: 'channel_left_members_count_fact'
+    },
+    chat_messages_count: {
+      plan: 'chat_messages_count_plan',
+      fact: 'chat_messages_count_fact'
+    },
+    registered_tables: {
+      plan: 'registered_tables_plan',
+      fact: 'registered_tables_fact'
+    }
+  };
 
   const weeklySumMetrics = [
     'channel_new_members_count',
     'channel_left_members_count',
-    'chat_messages_count'
+    'chat_messages_count',
+    'registered_tables'
   ];
 
   const days = [];
@@ -1746,8 +1769,7 @@ function viewWeekly() {
   }
 
   const agg = METRICS.map(m => {
-    let lastPlan = null;
-    let lastFact = null;
+    let dashboardFact = null;
 
     if (weeklySumMetrics.includes(m.id)) {
       let sumFact = 0;
@@ -1760,57 +1782,40 @@ function viewWeekly() {
           sumFact += Number(v.fact);
           hasFact = true;
         }
-
-        if (v?.plan != null) {
-          lastPlan = v.plan;
-        }
       }
 
-      lastFact = hasFact ? sumFact : null;
+      dashboardFact = hasFact ? sumFact : null;
     } else {
       for (let i = days.length - 1; i >= 0; i--) {
         const v = days[i].data?.[m.id];
 
-        if (v?.fact != null || v?.plan != null) {
-          lastPlan = v?.plan ?? null;
-          lastFact = v?.fact ?? null;
+        if (v?.fact != null) {
+          dashboardFact = v.fact;
           break;
         }
       }
     }
 
-    const st = statusFor(lastPlan, lastFact, {
-      lowerIsBetter: isLowerBetter(m.id)
-    });
+    const fields = weeklyPlanFactFields[m.id] || {};
+    const textPlan = fields.plan ? currentPlan[fields.plan] : '';
+    const textFact = fields.fact ? currentPlan[fields.fact] : '';
 
     return {
       metric: m,
-      lastPlan,
-      lastFact,
-      st
+      dashboardFact,
+      textPlan,
+      textFact
     };
   });
 
   const rows = agg.map(a => `
-    <tr>
-      <td>${a.metric.name}</td>
-      <td class="num">${a.lastPlan == null ? '—' : fmtNum(Math.round(a.lastPlan))}</td>
-      <td class="num">${a.lastFact == null ? '—' : fmtNum(Math.round(a.lastFact))}</td>
-      <td class="num"><span class="pill ${a.st.cls}">${a.st.label}</span></td>
-      <td style="min-width:220px; white-space:pre-wrap;">${escapeHtml(retentionPlan)}</td>
-      <td style="min-width:220px; white-space:pre-wrap;">${escapeHtml(acquisitionPlan)}</td>
-      <td style="min-width:220px; white-space:pre-wrap;">${escapeHtml(retentionFact)}</td>
-      <td style="min-width:220px; white-space:pre-wrap;">${escapeHtml(acquisitionFact)}</td>
-      <td class="num">${a.lastFact == null ? '—' : fmtNum(Math.round(a.lastFact))}</td>
-    </tr>
-  `).join('');
-
-  const ranked = [...agg]
-    .filter(a => a.st.pct !== null)
-    .sort((x, y) => y.st.pct - x.st.pct);
-
-  const best = ranked[0];
-  const worst = ranked[ranked.length - 1];
+  <tr>
+    <td>${a.metric.name}</td>
+    <td class="num">${a.dashboardFact == null ? '—' : fmtNum(Math.round(a.dashboardFact))}</td>
+    <td style="min-width:260px; white-space:pre-wrap;">${escapeHtml(a.textPlan || '—')}</td>
+    <td style="min-width:260px; white-space:pre-wrap;">${escapeHtml(a.textFact || '—')}</td>
+  </tr>
+`).join('');
 
   return `
     <div class="panel">
@@ -1826,48 +1831,23 @@ function viewWeekly() {
         </div>
       </div>
 
-      <div class="row cols-2 mt-16">
+      <div class="row cols-1 mt-16">
         <div>
           <div class="scroll-x">
             <table class="tbl">
               <thead>
                 <tr>
                   <th>Метрика</th>
-                  <th class="num">План</th>
-                  <th class="num">Факт за неделю / последний день</th>
-                  <th class="num">% плана</th>
-                  <th>План на удержание</th>
-                  <th>План на привлечение</th>
-                  <th>Факт на удержание</th>
-                  <th>Факт на привлечение</th>
-                  <th class="num">Факт</th>
+                  <th class="num">Факт по данным</th>
+                  <th>План</th>
+                  <th>Факт</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
           </div>
         </div>
-
-        <div class="chart-wrap">
-          <canvas id="chWeek"></canvas>
-        </div>
       </div>
-
-      ${best && worst ? `
-        <div class="row cols-2 mt-22">
-          <div class="panel" style="background:var(--panel-2);">
-            <div class="hint">Лучшая метрика недели</div>
-            <div style="font-size:18px;font-weight:700;margin-top:6px;">${best.metric.name}</div>
-            <div class="pill ${best.st.cls}" style="margin-top:6px;">${best.st.label}</div>
-          </div>
-
-          <div class="panel" style="background:var(--panel-2);">
-            <div class="hint">Худшая метрика недели</div>
-            <div style="font-size:18px;font-weight:700;margin-top:6px;">${worst.metric.name}</div>
-            <div class="pill ${worst.st.cls}" style="margin-top:6px;">${worst.st.label}</div>
-          </div>
-        </div>
-      ` : ''}
     </div>
   `;
 }
