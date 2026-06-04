@@ -1652,20 +1652,32 @@ function viewChannelMembersAnalytics() {
     <div class="panel">
       <div class="page-title">Аналитика участников канала</div>
 
-      <div class="flex gap-12 center mt-8">
-        <div class="field" style="max-width:220px;">
-          <label>Выберите дату</label>
-          <input
-            type="date"
-            value="${selectedDate}"
-            onchange="changeMembersAnalyticsDate(this.value)"
-          />
-        </div>
+    <div class="flex gap-12 center mt-8" style="flex-wrap:wrap;">
+     <button class="btn secondary btn-sm" onclick="shiftMembersAnalyticsDate(-1)">
+      ← Предыдущий день
+     </button>
 
-        <div class="hint">
-          Данные участников за выбранную дату
-        </div>
-      </div>
+    <div class="field" style="max-width:220px;">
+     <label>Дата</label>
+     <input
+       type="date"
+       value="${selectedDate}"
+       onchange="changeMembersAnalyticsDate(this.value)"
+    />
+  </div>
+
+  <button class="btn secondary btn-sm" onclick="shiftMembersAnalyticsDate(1)">
+    Следующий день →
+  </button>
+
+  <button class="btn ghost btn-sm" onclick="changeMembersAnalyticsDate(todayISO())">
+    Сегодня
+  </button>
+
+  <div class="hint">
+    Данные участников за выбранную дату
+  </div>
+</div>
 
       <div class="row cols-3 mt-16">
         <div class="kpi">
@@ -1707,6 +1719,14 @@ function viewChannelMembersAnalytics() {
 
 function changeMembersAnalyticsDate(date) {
   membersAnalyticsDate = date;
+  renderPage('channelMembers');
+}
+
+function shiftMembersAnalyticsDate(delta) {
+  const current = membersAnalyticsDate || todayISO();
+  const next = isoFromDate(addDays(dateFromISO(current), delta));
+
+  membersAnalyticsDate = next;
   renderPage('channelMembers');
 }
 
@@ -2965,20 +2985,6 @@ async function showChannelMembersForDate() {
     </div>
   `);
 }
-
-async function showChannelMembersForDate() {
-  const { data, error } = await supabaseClient
-    .from('telegram_members_snapshots')
-    .select('*')
-    .eq('snapshot_date', todayISO())
-    .eq('source', 'channel')
-    .order('username', { ascending: true });
-
-  if (error) {
-    console.error(error);
-    toast('Ошибка загрузки участников канала', 'error');
-    return;
-  }
 
   const rows = data && data.length
     ? data.map(m => {
