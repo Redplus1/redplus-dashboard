@@ -2068,6 +2068,25 @@ function viewWeekly() {
   const end = addDays(start, 6);
 
   const weeklyPlans = loadJSON(STORAGE_KEYS.weeklyPlans, []);
+  const weeklyPlanner = loadJSON('rplus.weekly_daily_planner.v1', []);
+
+function getPlannerWeeklyText(metricId, field) {
+  const weekStart = isoFromDate(start);
+  const items = weeklyPlanner
+    .filter(p =>
+      p.week_start === weekStart &&
+      p.metric_id === metricId &&
+      p[field] &&
+      String(p[field]).trim()
+    )
+    .sort((a, b) => String(a.plan_date).localeCompare(String(b.plan_date)));
+
+  if (!items.length) return '—';
+
+  return items.map(p => {
+    return `${p.plan_date}: ${String(p[field]).trim()}`;
+  }).join('\n');
+}
 
   const currentPlan = weeklyPlans.find(p =>
     p.week_start === isoFromDate(start)
@@ -2151,11 +2170,17 @@ function viewWeekly() {
     const textPlan = fields.plan ? currentPlan[fields.plan] : '';
     const textFact = fields.fact ? currentPlan[fields.fact] : '';
 
+    const plannerPlanText = getPlannerWeeklyText(m.id, 'plan_text');
+    const plannerFactText = getPlannerWeeklyText(m.id, 'fact_text');
+
+    const finalPlanText = plannerPlanText !== '—' ? plannerPlanText : (textPlan || '—');
+    const finalFactText = plannerFactText !== '—' ? plannerFactText : (textFact || '—');
+
     return {
       metric: m,
       dashboardFact,
-      textPlan,
-      textFact
+      finalPlanText,
+      finalFactText
     };
   });
 
@@ -2163,8 +2188,8 @@ function viewWeekly() {
   <tr>
     <td>${a.metric.name}</td>
     <td class="num">${a.dashboardFact == null ? '—' : fmtNum(Math.round(a.dashboardFact))}</td>
-    <td style="min-width:260px; white-space:pre-wrap;">${escapeHtml(a.textPlan || '—')}</td>
-    <td style="min-width:260px; white-space:pre-wrap;">${escapeHtml(a.textFact || '—')}</td>
+    <td style="min-width:300px; white-space:pre-wrap;">${escapeHtml(a.finalPlanText || '—')}</td>
+    <td style="min-width:300px; white-space:pre-wrap;">${escapeHtml(a.finalFactText || '—')}</td>
   </tr>
 `).join('');
 
