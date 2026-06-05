@@ -339,6 +339,7 @@
       <div class="nav-item" data-page="daily"><span class="nav-ico">✎</span> Ежедневный отчет</div>
       <div class="nav-item" data-page="channelMembers"><span class="nav-ico">👥</span> Аналитика участников канала</div>
       <div class="nav-item" data-page="weekly"><span class="nav-ico">≡</span> Недельные сводки</div>
+      <div class="nav-item" data-page="weeklyPlanner"><span class="nav-ico">🗓</span> Планер недели</div>
       <div class="nav-item" data-page="monthly"><span class="nav-ico">▤</span> Месячные сводки</div>
       <div class="nav-item" data-page="strategy"><span class="nav-ico">◎</span> Стратегия (24 мес)</div>
       <div class="nav-item" data-page="analytics"><span class="nav-ico">⌬</span> Аналитика</div>
@@ -753,6 +754,27 @@ async function loadSupabaseWeeklyPlans() {
   }
 }
 
+async function loadSupabaseWeeklyPlanner() {
+  try {
+    if (!supabaseClient) return;
+
+    const { data, error } = await supabaseClient
+      .from('weekly_daily_planner')
+      .select('*')
+      .order('plan_date', { ascending: true });
+
+    if (error) {
+      console.error('Ошибка загрузки weekly_daily_planner:', error);
+      return;
+    }
+
+    saveJSON('rplus.weekly_daily_planner.v1', data || []);
+    console.log('weekly_daily_planner загружен:', data);
+  } catch (e) {
+    console.error('Ошибка weekly_daily_planner:', e);
+  }
+}
+
 function latestDailyDate() {
   const all = loadJSON(STORAGE_KEYS.daily, {});
   const dates = Object.keys(all).filter(Boolean).sort();
@@ -843,12 +865,13 @@ function renderApp() {
 
   renderPage('dashboard');
 
-  Promise.all([
-    loadSupabaseDailyReports(),
-    loadSupabaseWeeklyPlans()
-  ]).then(() => {
-    renderPage(currentPage);
-  });
+Promise.all([
+  loadSupabaseDailyReports(),
+  loadSupabaseWeeklyPlans(),
+  loadSupabaseWeeklyPlanner()
+]).then(() => {
+  renderPage(currentPage);
+});
 }
 
 function renderPage(page) {
@@ -861,6 +884,7 @@ function renderPage(page) {
     daily: 'Ежедневный отчет',
     channelMembers: 'Аналитика участников канала',
     weekly: 'Недельные сводки',
+    weeklyPlanner: 'Планер недели',
     monthly: 'Месячные сводки',
     strategy: 'Стратегия развития · 24 месяца',
     analytics: 'Аналитика',
@@ -873,6 +897,7 @@ function renderPage(page) {
   else if (page === 'daily') c.innerHTML = viewDaily();
   else if (page === 'channelMembers') c.innerHTML = viewChannelMembersAnalytics();
   else if (page === 'weekly') c.innerHTML = viewWeekly();
+  else if (page === 'weeklyPlanner') c.innerHTML = viewWeeklyPlanner();
   else if (page === 'monthly') c.innerHTML = viewMonthly();
   else if (page === 'strategy') c.innerHTML = viewStrategy();
   else if (page === 'analytics') c.innerHTML = viewAnalytics();
@@ -1728,6 +1753,248 @@ function shiftMembersAnalyticsDate(delta) {
 
   membersAnalyticsDate = next;
   renderPage('channelMembers');
+}
+
+let plannerWeekStart = null;
+
+function viewWeeklyPlanner() {
+  if (!plannerWeekStart) plannerWeekStart = isoFromDate(startOfWeek(new Date()));
+
+  const start = dateFromISO(plannerWeekStart);
+  const end = addDays(start, 6);
+
+  const planner = loadJSON('rplus.weekly_daily_planner.v1', []);
+  const daily = loadJSON(STORAGE_KEYS.daily, {});
+
+  const plannerMetrics = [
+    { id: 'channel_members', name: 'Участники канала' },
+    { id: 'chat_members', name: 'Участники чата' },
+    { id: 'channel_new_members_count', name: 'Новые участники' },
+    { id: 'channel_left_members_count', name: 'Выбывшие' },
+    { id: 'chat_messages_count', name: 'Сообщения чата' },
+    { id: 'registered_tables', name: 'Зарегистрированные таблицы' }
+  ];
+
+  const dayNames = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+
+  const dayPanels = [];
+
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(start, i);
+    const date = isoFromDate(d);
+    const dayData = daily[date] || {};
+
+    const metricRows = plannerMetrics.map(metric => {
+      const existing = planner.find(p =>
+        p.plan_date === date && p.metric_id === metric.id
+      ) || {};
+
+      const metricValue = dayData?.[metric.id]?.fact ?? null;
+
+      return `
+        <tr>
+          <td style="min-width:180px;"><b>${metric.name}</b></td>
+          <td class="num">${metricValue == null ? '—' : fmtNum(Math.round(metricValue))}</td>
+          <td>
+            <textarea
+              class="cell-input"
+              style="min-width:260px; min-height:72px;"
+              placeholder="План действий"
+              oninput="savePlannerCell('${date}', '${metric.id}', '${escapeHtml(metric.name)}', 'plan_text', this.value)"
+            >${escapeHtml(existing.plan_text || '')}</textarea>
+          </td>
+          <td>
+            <textarea
+              class="cell-input"
+              style="min-width:260px; min-height:72px;"
+              placeholder="Факт выполнения"
+              oninput="savePlannerCell('${date}', '${metric.id}', '${escapeHtml(metric.name)}', 'fact_text', this.value)"
+            >${escapeHtml(existing.fact_text || '')}</textarea>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    dayPanels.push(`
+      <div class="panel mt-16" style="background:var(--panel-2);">
+        <div class="page-title" style="font-size:16px;">${dayNames[i]} · ${date}</div>
+        <div class="hint mt-8">Число подтягивается из ежедневных данных. План и факт заполняются вручную.</div>
+
+        <div class="scroll-x mt-12">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Метрика</th>
+                <th class="num">Число</th>
+                <th>План действий</th>
+                <th>Факт выполнения</th>
+              </tr>
+            </thead>
+            <tbody>${metricRows}</tbody>
+          </table>
+        </div>
+      </div>
+    `);
+  }
+
+  return `
+    <div class="panel">
+      <div class="flex between center" style="flex-wrap:wrap;gap:12px;">
+        <div class="flex gap-12 center">
+          <button class="btn secondary btn-sm" onclick="shiftPlannerWeek(-1)">← Прошлая</button>
+          <div class="page-title" style="font-size:16px;">
+            Планер недели: ${isoFromDate(start)} — ${isoFromDate(end)}
+          </div>
+          <button class="btn secondary btn-sm" onclick="shiftPlannerWeek(1)">Следующая →</button>
+        </div>
+
+        <button class="btn ghost btn-sm" onclick="showWeeklyPlannerReport()">Сформировать отчёт</button>
+      </div>
+
+      <div class="hint mt-16">
+        Планер по дням недели: фактические числовые значения + план действий + факт выполнения.
+      </div>
+    </div>
+
+    ${dayPanels.join('')}
+  `;
+}
+
+function shiftPlannerWeek(delta) {
+  if (!plannerWeekStart) plannerWeekStart = isoFromDate(startOfWeek(new Date()));
+  plannerWeekStart = isoFromDate(addDays(dateFromISO(plannerWeekStart), delta * 7));
+  renderPage('weeklyPlanner');
+}
+
+let plannerSaveTimers = {};
+
+async function savePlannerCell(planDate, metricId, metricName, field, value) {
+  const key = `${planDate}_${metricId}_${field}`;
+
+  clearTimeout(plannerSaveTimers[key]);
+
+  plannerSaveTimers[key] = setTimeout(async () => {
+    const weekStart = isoFromDate(startOfWeek(dateFromISO(planDate)));
+
+    const planner = loadJSON('rplus.weekly_daily_planner.v1', []);
+    let row = planner.find(p => p.plan_date === planDate && p.metric_id === metricId);
+
+    if (!row) {
+      row = {
+        week_start: weekStart,
+        plan_date: planDate,
+        metric_id: metricId,
+        metric_name: metricName,
+        plan_text: '',
+        fact_text: ''
+      };
+      planner.push(row);
+    }
+
+    row[field] = value;
+    row.updated_at = new Date().toISOString();
+
+    saveJSON('rplus.weekly_daily_planner.v1', planner);
+
+    if (supabaseClient) {
+      const payload = {
+        week_start: weekStart,
+        plan_date: planDate,
+        metric_id: metricId,
+        metric_name: metricName,
+        [field]: value,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabaseClient
+        .from('weekly_daily_planner')
+        .upsert(payload, { onConflict: 'plan_date,metric_id' });
+
+      if (error) {
+        console.error('Ошибка сохранения планера:', error);
+        toast('Ошибка сохранения планера', 'error');
+        return;
+      }
+    }
+
+    toast('Планер сохранён');
+  }, 600);
+}
+
+function showWeeklyPlannerReport() {
+  if (!plannerWeekStart) plannerWeekStart = isoFromDate(startOfWeek(new Date()));
+
+  const start = dateFromISO(plannerWeekStart);
+  const end = addDays(start, 6);
+
+  const planner = loadJSON('rplus.weekly_daily_planner.v1', []);
+  const daily = loadJSON(STORAGE_KEYS.daily, {});
+
+  const plannerMetrics = [
+    { id: 'channel_members', name: 'Участники канала' },
+    { id: 'chat_members', name: 'Участники чата' },
+    { id: 'channel_new_members_count', name: 'Новые участники' },
+    { id: 'channel_left_members_count', name: 'Выбывшие' },
+    { id: 'chat_messages_count', name: 'Сообщения чата' },
+    { id: 'registered_tables', name: 'Зарегистрированные таблицы' }
+  ];
+
+  const dayNames = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+  const parts = [];
+
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(start, i);
+    const date = isoFromDate(d);
+    const dayData = daily[date] || {};
+
+    const rows = plannerMetrics.map(metric => {
+      const item = planner.find(p =>
+        p.plan_date === date && p.metric_id === metric.id
+      ) || {};
+
+      const value = dayData?.[metric.id]?.fact ?? null;
+
+      return `
+${metric.name}: ${value == null ? '—' : fmtNum(Math.round(value))}
+План: ${item.plan_text || '—'}
+Факт: ${item.fact_text || '—'}
+`;
+    }).join('\n');
+
+    parts.push(`
+${dayNames[i]} · ${date}
+
+${rows}
+`);
+  }
+
+  const report = `
+Отчёт по планеру за период ${isoFromDate(start)} — ${isoFromDate(end)}
+
+${parts.join('\n━━━━━━━━━━━━━━\n')}
+`;
+
+  showModal(`
+    <div class="modal-backdrop" onclick="closeModal()">
+      <div class="modal" onclick="event.stopPropagation()" style="max-width:900px;">
+        <div class="flex between center">
+          <h3>Отчёт по планеру</h3>
+          <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
+        </div>
+
+        <textarea
+          style="width:100%;min-height:70vh;margin-top:16px;font-family:monospace;background:var(--bg-2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px;"
+          readonly
+        >${escapeHtml(report)}</textarea>
+      </div>
+    </div>
+  `);
+}
+
+function shiftPlannerWeek(delta) {
+  if (!plannerWeekStart) plannerWeekStart = isoFromDate(startOfWeek(new Date()));
+  plannerWeekStart = isoFromDate(addDays(dateFromISO(plannerWeekStart), delta * 7));
+  renderPage('weeklyPlanner');
 }
 
 function viewWeekly() {
