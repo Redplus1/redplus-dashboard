@@ -1848,8 +1848,16 @@ function viewWeeklyPlanner() {
           <button class="btn secondary btn-sm" onclick="shiftPlannerWeek(1)">Следующая →</button>
         </div>
 
-        <button class="btn ghost btn-sm" onclick="showWeeklyPlannerReport()">Сформировать отчёт</button>
+        <div class="flex gap-8">
+  <button class="btn ghost btn-sm" onclick="showWeeklyPlannerReport()">
+    Сформировать отчёт
+  </button>
+
+  <button class="btn secondary btn-sm" onclick="copyWeeklyPlannerReport()">
+    📋 Скопировать отчёт
+  </button>
       </div>
+  </div>
 
       <div class="hint mt-16">
         Планер по дням недели: фактические числовые значения + план действий + факт выполнения.
@@ -1989,6 +1997,62 @@ ${parts.join('\n━━━━━━━━━━━━━━\n')}
       </div>
     </div>
   `);
+}
+
+async function copyWeeklyPlannerReport() {
+  if (!plannerWeekStart) plannerWeekStart = isoFromDate(startOfWeek(new Date()));
+
+  const start = dateFromISO(plannerWeekStart);
+  const end = addDays(start, 6);
+
+  const planner = loadJSON('rplus.weekly_daily_planner.v1', []);
+  const daily = loadJSON(STORAGE_KEYS.daily, {});
+
+  const plannerMetrics = [
+    { id: 'channel_members', name: 'Участники канала' },
+    { id: 'chat_members', name: 'Участники чата' },
+    { id: 'channel_new_members_count', name: 'Новые участники' },
+    { id: 'channel_left_members_count', name: 'Выбывшие' },
+    { id: 'chat_messages_count', name: 'Сообщения чата' },
+    { id: 'registered_tables', name: 'Зарегистрированные таблицы' }
+  ];
+
+  const dayNames = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+
+  const sections = [];
+
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(start, i);
+    const date = isoFromDate(d);
+    const dayData = daily[date] || {};
+
+    const rows = plannerMetrics.map(metric => {
+      const item = planner.find(p =>
+        p.plan_date === date &&
+        p.metric_id === metric.id
+      ) || {};
+
+      const value = dayData?.[metric.id]?.fact ?? null;
+
+      return `${metric.name}: ${value == null ? '—' : fmtNum(Math.round(value))}
+План: ${item.plan_text || '—'}
+Факт: ${item.fact_text || '—'}`;
+    }).join('\n\n');
+
+    sections.push(`${dayNames[i]} · ${date}\n\n${rows}`);
+  }
+
+  const report = `Отчёт по планеру за период ${isoFromDate(start)} — ${isoFromDate(end)}
+
+${sections.join('\n\n━━━━━━━━━━━━━━━━━━━━\n\n')}`;
+
+  try {
+    await navigator.clipboard.writeText(report);
+    toast('Отчёт скопирован');
+  } catch (e) {
+    console.error(e);
+    toast('Ошибка копирования', 'error');
+  }
 }
 
 function shiftPlannerWeek(delta) {
