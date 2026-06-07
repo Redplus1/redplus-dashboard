@@ -1791,29 +1791,51 @@ function viewWeeklyPlanner() {
 
       const metricValue = dayData?.[metric.id]?.fact ?? null;
 
-      return `
-        <tr>
-          <td style="min-width:180px;"><b>${metric.name}</b></td>
-          <td class="num">${metricValue == null ? '—' : fmtNum(Math.round(metricValue))}</td>
-          <td>
-            <textarea
-              class="cell-input"
-              style="min-width:260px; min-height:72px;"
-              placeholder="План действий"
-              oninput="savePlannerCell('${date}', '${metric.id}', '${escapeHtml(metric.name)}', 'plan_text', this.value)"
-            >${escapeHtml(existing.plan_text || '')}</textarea>
-          </td>
-          <td>
-            <textarea
-              class="cell-input"
-              style="min-width:260px; min-height:72px;"
-              placeholder="Факт выполнения"
-              oninput="savePlannerCell('${date}', '${metric.id}', '${escapeHtml(metric.name)}', 'fact_text', this.value)"
-            >${escapeHtml(existing.fact_text || '')}</textarea>
-          </td>
-        </tr>
-      `;
-    }).join('');
+const tasks = Array.isArray(existing.tasks)
+  ? existing.tasks
+  : String(existing.plan_text || '')
+      .split('\n')
+      .filter(Boolean)
+      .map(text => ({
+        text,
+        done: String(existing.fact_text || '').includes(text)
+      }));
+
+const taskRows = Array.from({ length: 10 }).map((_, taskIndex) => {
+  const task = tasks[taskIndex] || { text: '', done: false };
+
+  return `
+    <div class="flex gap-8 center" style="margin-bottom:6px;">
+      <span class="hint" style="width:22px;">${taskIndex + 1}.</span>
+
+      <input
+        class="cell-input"
+        style="min-width:360px;"
+        value="${escapeHtml(task.text || '')}"
+        placeholder="Задача"
+        oninput="savePlannerTask('${date}', '${metric.id}', '${escapeHtml(metric.name)}', ${taskIndex}, 'text', this.value)"
+      />
+
+      <label class="flex gap-8 center" style="white-space:nowrap;">
+        <input
+          type="checkbox"
+          ${task.done ? 'checked' : ''}
+          onchange="savePlannerTask('${date}', '${metric.id}', '${escapeHtml(metric.name)}', ${taskIndex}, 'done', this.checked)"
+        />
+        выполнено
+      </label>
+    </div>
+  `;
+}).join('');
+
+return `
+  <tr>
+    <td style="min-width:180px;"><b>${metric.name}</b></td>
+    <td class="num">${metricValue == null ? '—' : fmtNum(Math.round(metricValue))}</td>
+    <td>${taskRows}</td>
+  </tr>
+`;
+}).join('');
 
     dayPanels.push(`
       <div class="panel mt-16" style="background:var(--panel-2);">
@@ -1826,8 +1848,7 @@ function viewWeeklyPlanner() {
               <tr>
                 <th>Метрика</th>
                 <th class="num">Число</th>
-                <th>План действий</th>
-                <th>Факт выполнения</th>
+                <th>Задачи / выполнение</th>
               </tr>
             </thead>
             <tbody>${metricRows}</tbody>
@@ -1927,6 +1948,80 @@ async function savePlannerCell(planDate, metricId, metricName, field, value) {
 
     toast('Планер сохранён');
   }, 600);
+}
+
+let plannerTaskSaveTimers = {};
+
+async function savePlannerTask(planDate, metricId, metricName, taskIndex, field, value) {
+  const key = `${planDate}_${metricId}_${taskIndex}_${field}`;
+
+  clearTimeout(plannerTaskSaveTimers[key]);
+
+  plannerTaskSaveTimers[key] = setTimeout(async () => {
+    const weekStart = isoFromDate(startOfWeek(dateFromISO(planDate)));
+
+    const planner = loadJSON('rplus.weekly_daily_planner.v1', []);
+    let row = planner.find(p => p.plan_date === planDate && p.metric_id === metricId);
+
+    if (!row) {
+      row = {
+        week_start: weekStart,
+        plan_date: planDate,
+        metric_id: metricId,
+        metric_name: metricName,
+        plan_text: '',
+        fact_text: '',
+        tasks: []
+      };
+      planner.push(row);
+    }
+
+    if (!Array.isArray(row.tasks)) row.tasks = [];
+
+    while (row.tasks.length < 10) {
+      row.tasks.push({ text: '', done: false });
+    }
+
+    row.tasks[taskIndex][field] = value;
+    row.updated_at = new Date().toISOString();
+
+    row.plan_text = row.tasks
+      .filter(t => t.text && String(t.text).trim())
+      .map(t => String(t.text).trim())
+      .join('\n');
+
+    row.fact_text = row.tasks
+      .filter(t => t.text && t.done)
+      .map(t => String(t.text).trim())
+      .join('\n');
+
+    saveJSON('rplus.weekly_daily_planner.v1', planner);
+
+    if (supabaseClient) {
+      const payload = {
+        week_start: weekStart,
+        plan_date: planDate,
+        metric_id: metricId,
+        metric_name: metricName,
+        tasks: row.tasks,
+        plan_text: row.plan_text,
+        fact_text: row.fact_text,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabaseClient
+        .from('weekly_daily_planner')
+        .upsert(payload, { onConflict: 'plan_date,metric_id' });
+
+      if (error) {
+        console.error('Ошибка сохранения задачи:', error);
+        toast('Ошибка сохранения задачи', 'error');
+        return;
+      }
+    }
+
+    toast('Задача сохранена');
+  }, 500);
 }
 
 function showWeeklyPlannerReport() {
@@ -2203,6 +2298,8 @@ function getPlannerWeeklyText(metricId, field) {
         </div>
 
         <div class="row-actions">
+          <button class="btn ghost btn-sm" onclick="showWeeklySummaryReport()">Сформировать отчёт</button>
+          <button class="btn secondary btn-sm" onclick="downloadWeeklySummaryReport()">Скачать отчёт</button>
           <button class="btn ghost btn-sm" onclick="exportWeekCSV()">Экспорт CSV</button>
         </div>
       </div>
@@ -2226,6 +2323,78 @@ function getPlannerWeeklyText(metricId, field) {
       </div>
     </div>
   `;
+}
+
+function buildWeeklySummaryReport() {
+  if (!currentWeekStart) currentWeekStart = isoFromDate(startOfWeek(new Date()));
+
+  const start = dateFromISO(currentWeekStart);
+  const end = addDays(start, 6);
+
+  const rows = Array.from(document.querySelectorAll('.tbl tbody tr')).map(tr => {
+    const cells = tr.querySelectorAll('td');
+    return {
+      metric: cells[0]?.innerText?.trim() || '',
+      numeric: cells[1]?.innerText?.trim() || '—',
+      plan: cells[2]?.innerText?.trim() || '—',
+      fact: cells[3]?.innerText?.trim() || '—'
+    };
+  });
+
+  const body = rows.map(r => `
+${r.metric}
+Факт по данным: ${r.numeric}
+
+План:
+${r.plan}
+
+Факт:
+${r.fact}
+`).join('\n━━━━━━━━━━━━━━\n');
+
+  return `Отчёт за период ${isoFromDate(start)} — ${isoFromDate(end)}
+
+${body}
+
+Ссылка на дашборд:
+https://redplus1.github.io/redplus-dashboard/`;
+}
+
+function showWeeklySummaryReport() {
+  const report = buildWeeklySummaryReport();
+
+  showModal(`
+    <div class="modal-backdrop" onclick="closeModal()">
+      <div class="modal" onclick="event.stopPropagation()" style="max-width:900px;">
+        <div class="flex between center">
+          <h3>Отчёт недельной сводки</h3>
+          <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
+        </div>
+
+        <textarea
+          style="width:100%;min-height:70vh;margin-top:16px;font-family:monospace;background:var(--bg-2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px;"
+          readonly
+        >${escapeHtml(report)}</textarea>
+      </div>
+    </div>
+  `);
+}
+
+function downloadWeeklySummaryReport() {
+  const report = buildWeeklySummaryReport();
+
+  const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `weekly-report-${currentWeekStart || todayISO()}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  URL.revokeObjectURL(url);
+  toast('Отчёт скачан');
 }
 
 function shiftWeek(delta) {
