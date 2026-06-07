@@ -1789,53 +1789,62 @@ function viewWeeklyPlanner() {
         p.plan_date === date && p.metric_id === metric.id
       ) || {};
 
-      const metricValue = dayData?.[metric.id]?.fact ?? null;
+            const metricValue = dayData?.[metric.id]?.fact ?? null;
 
-const tasks = Array.isArray(existing.tasks)
-  ? existing.tasks
-  : String(existing.plan_text || '')
-      .split('\n')
-      .filter(Boolean)
-      .map(text => ({
-        text,
-        done: String(existing.fact_text || '').includes(text)
-      }));
+      const tasks = Array.isArray(existing.tasks)
+        ? existing.tasks
+        : String(existing.plan_text || '')
+            .split('\n')
+            .filter(Boolean)
+            .map(text => ({
+              text,
+              done: String(existing.fact_text || '').includes(text)
+            }));
 
-const taskRows = Array.from({ length: 10 }).map((_, taskIndex) => {
-  const task = tasks[taskIndex] || { text: '', done: false };
+      const visibleTasks = tasks.length ? tasks : [{ text: '', done: false }];
 
-  return `
-    <div class="flex gap-8 center" style="margin-bottom:6px;">
-      <span class="hint" style="width:22px;">${taskIndex + 1}.</span>
+      const taskRows = visibleTasks.map((task, taskIndex) => {
+        return `
+          <div class="flex gap-8 center" style="margin-bottom:6px;">
+            <span class="hint" style="width:22px;">${taskIndex + 1}.</span>
 
-      <input
-        class="cell-input"
-        style="min-width:360px;"
-        value="${escapeHtml(task.text || '')}"
-        placeholder="Задача"
-        oninput="savePlannerTask('${date}', '${metric.id}', '${escapeHtml(metric.name)}', ${taskIndex}, 'text', this.value)"
-      />
+            <input
+              class="cell-input"
+              style="min-width:360px;"
+              value="${escapeHtml(task.text || '')}"
+              placeholder="Задача"
+              oninput="savePlannerTask('${date}', '${metric.id}', '${escapeHtml(metric.name)}', ${taskIndex}, 'text', this.value)"
+            />
 
-      <label class="flex gap-8 center" style="white-space:nowrap;">
-        <input
-          type="checkbox"
-          ${task.done ? 'checked' : ''}
-          onchange="savePlannerTask('${date}', '${metric.id}', '${escapeHtml(metric.name)}', ${taskIndex}, 'done', this.checked)"
-        />
-        выполнено
-      </label>
-    </div>
-  `;
-}).join('');
+            <label class="flex gap-8 center" style="white-space:nowrap;">
+              <input
+                type="checkbox"
+                ${task.done ? 'checked' : ''}
+                onchange="savePlannerTask('${date}', '${metric.id}', '${escapeHtml(metric.name)}', ${taskIndex}, 'done', this.checked)"
+              />
+              выполнено
+            </label>
+          </div>
+        `;
+      }).join('');
 
-return `
-  <tr>
-    <td style="min-width:180px;"><b>${metric.name}</b></td>
-    <td class="num">${metricValue == null ? '—' : fmtNum(Math.round(metricValue))}</td>
-    <td>${taskRows}</td>
-  </tr>
-`;
-}).join('');
+      const addTaskButton = `
+        <button
+          class="btn ghost btn-sm mt-8"
+          onclick="addPlannerTask('${date}', '${metric.id}', '${escapeHtml(metric.name)}')"
+        >
+          ＋ Добавить задачу
+        </button>
+      `;
+
+      return `
+        <tr>
+          <td style="min-width:180px;"><b>${metric.name}</b></td>
+          <td class="num">${metricValue == null ? '—' : fmtNum(Math.round(metricValue))}</td>
+          <td>${taskRows}${addTaskButton}</td>
+        </tr>
+      `;
+        }).join('');
 
     dayPanels.push(`
       <div class="panel mt-16" style="background:var(--panel-2);">
@@ -1978,7 +1987,7 @@ async function savePlannerTask(planDate, metricId, metricName, taskIndex, field,
 
     if (!Array.isArray(row.tasks)) row.tasks = [];
 
-    while (row.tasks.length < 10) {
+    while (row.tasks.length <= taskIndex) {
       row.tasks.push({ text: '', done: false });
     }
 
@@ -2022,6 +2031,59 @@ async function savePlannerTask(planDate, metricId, metricName, taskIndex, field,
 
     toast('Задача сохранена');
   }, 500);
+}
+
+async function addPlannerTask(planDate, metricId, metricName) {
+  const weekStart = isoFromDate(startOfWeek(dateFromISO(planDate)));
+
+  const planner = loadJSON('rplus.weekly_daily_planner.v1', []);
+  let row = planner.find(p => p.plan_date === planDate && p.metric_id === metricId);
+
+  if (!row) {
+    row = {
+      week_start: weekStart,
+      plan_date: planDate,
+      metric_id: metricId,
+      metric_name: metricName,
+      plan_text: '',
+      fact_text: '',
+      tasks: []
+    };
+    planner.push(row);
+  }
+
+  if (!Array.isArray(row.tasks)) row.tasks = [];
+
+  row.tasks.push({ text: '', done: false });
+  row.updated_at = new Date().toISOString();
+
+  saveJSON('rplus.weekly_daily_planner.v1', planner);
+
+  if (supabaseClient) {
+    const payload = {
+      week_start: weekStart,
+      plan_date: planDate,
+      metric_id: metricId,
+      metric_name: metricName,
+      tasks: row.tasks,
+      plan_text: row.plan_text || '',
+      fact_text: row.fact_text || '',
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabaseClient
+      .from('weekly_daily_planner')
+      .upsert(payload, { onConflict: 'plan_date,metric_id' });
+
+    if (error) {
+      console.error('Ошибка добавления задачи:', error);
+      toast('Ошибка добавления задачи', 'error');
+      return;
+    }
+  }
+
+  renderPage('weeklyPlanner');
+  toast('Задача добавлена');
 }
 
 function showWeeklyPlannerReport() {
