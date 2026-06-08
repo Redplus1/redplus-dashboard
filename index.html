@@ -2360,11 +2360,42 @@ function getPlannerWeeklyText(metricId, field) {
         </div>
 
         <div class="row-actions">
-          <button class="btn ghost btn-sm" onclick="showWeeklySummaryReport()">Сформировать отчёт</button>
-          <button class="btn secondary btn-sm" onclick="downloadWeeklySummaryReport()">Скачать отчёт</button>
-          <button class="btn ghost btn-sm" onclick="exportWeekCSV()">Экспорт CSV</button>
-        </div>
-      </div>
+
+          <button
+            class="btn secondary btn-sm"
+            onclick="showFinalWeeklyReport()">
+            Итоговый отчёт
+          </button>
+
+          <button
+            class="btn ghost btn-sm"
+            onclick="showWeeklySummaryReport()">
+            Сформировать отчёт
+          </button>
+
+          <button
+            class="btn secondary btn-sm"
+            onclick="downloadWeeklySummaryReport()">
+            Скачать отчёт
+          </button>
+
+          <button
+            class="btn ghost btn-sm"
+            onclick="exportWeekCSV()">
+            Экспорт CSV
+          </button>
+
+          <button
+            class="btn secondary btn-sm"
+            onclick="copyFinalWeeklyReport()">
+            📋 Скопировать итоговый отчёт
+          </button>
+
+</div>
+
+</div> <!-- закрывает flex between center -->
+
+<div class="row cols-1 mt-16">
 
       <div class="row cols-1 mt-16">
         <div>
@@ -2385,6 +2416,107 @@ function getPlannerWeeklyText(metricId, field) {
       </div>
     </div>
   `;
+}
+
+function showFinalWeeklyReport() {
+  const today = new Date();
+
+  const currentWeekStartDate = startOfWeek(today);
+  const currentWeekStartISO = isoFromDate(currentWeekStartDate);
+  const currentWeekEndISO = isoFromDate(addDays(currentWeekStartDate, 6));
+
+  const previousWeekStartDate = addDays(currentWeekStartDate, -7);
+  const previousWeekEndDate = addDays(currentWeekStartDate, -1);
+
+  const previousWeekStartISO = isoFromDate(previousWeekStartDate);
+  const previousWeekEndISO = isoFromDate(previousWeekEndDate);
+
+  const daily = loadJSON(STORAGE_KEYS.daily, {});
+  const planner = loadJSON('rplus.weekly_daily_planner.v1', []);
+
+  const reportMetrics = [
+    { id: 'channel_members', name: 'Участники канала', mode: 'last' },
+    { id: 'chat_members', name: 'Участники чата', mode: 'last' },
+    { id: 'channel_new_members_count', name: 'Новые участники', mode: 'sum' },
+    { id: 'channel_left_members_count', name: 'Выбывшие', mode: 'sum' },
+    { id: 'chat_messages_count', name: 'Сообщения чата', mode: 'sum' },
+    { id: 'registered_tables', name: 'Зарегистрированные таблицы', mode: 'sum' }
+  ];
+
+  function getPreviousWeekFact(metric) {
+    let sum = 0;
+    let hasValue = false;
+    let lastValue = null;
+
+    for (let i = 0; i < 7; i++) {
+      const d = isoFromDate(addDays(previousWeekStartDate, i));
+      const value = daily[d]?.[metric.id]?.fact;
+
+      if (value == null) continue;
+
+      if (metric.mode === 'sum') {
+        sum += Number(value);
+        hasValue = true;
+      } else {
+        lastValue = Number(value);
+        hasValue = true;
+      }
+    }
+
+    if (!hasValue) return '—';
+    return metric.mode === 'sum' ? fmtNum(Math.round(sum)) : fmtNum(Math.round(lastValue));
+  }
+
+  function getCurrentWeekPlan(metricId) {
+    const items = planner
+      .filter(p =>
+        p.week_start === currentWeekStartISO &&
+        p.metric_id === metricId &&
+        p.plan_text &&
+        String(p.plan_text).trim()
+      )
+      .sort((a, b) => String(a.plan_date).localeCompare(String(b.plan_date)));
+
+    if (!items.length) return '—';
+
+    return items.map(p => {
+      return `${p.plan_date}: ${String(p.plan_text).trim()}`;
+    }).join('\n');
+  }
+
+  const metricBlocks = reportMetrics.map(metric => {
+    return `${metric.name}
+Факт за предыдущую неделю: ${getPreviousWeekFact(metric)}
+
+План на текущую неделю:
+${getCurrentWeekPlan(metric)}`;
+  }).join('\n\n━━━━━━━━━━━━━━\n\n');
+
+  const report = `Итоговый отчёт
+
+Период факта: ${previousWeekStartISO} — ${previousWeekEndISO}
+Период плана: ${currentWeekStartISO} — ${currentWeekEndISO}
+
+${metricBlocks}
+
+Ссылка на дашборд:
+https://redplus1.github.io/redplus-dashboard/`;
+
+  showModal(`
+    <div class="modal-backdrop" onclick="closeModal()">
+      <div class="modal" onclick="event.stopPropagation()" style="max-width:900px;">
+        <div class="flex between center">
+          <h3>Итоговый отчёт</h3>
+          <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
+        </div>
+
+        <textarea
+          style="width:100%;min-height:70vh;margin-top:16px;font-family:monospace;background:var(--bg-2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px;"
+          readonly
+        >${escapeHtml(report)}</textarea>
+      </div>
+    </div>
+  `);
 }
 
 function buildWeeklySummaryReport() {
