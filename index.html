@@ -2418,7 +2418,7 @@ function getPlannerWeeklyText(metricId, field) {
   `;
 }
 
-function showFinalWeeklyReport() {
+function buildFinalWeeklyReport() {
   const today = new Date();
 
   const currentWeekStartDate = startOfWeek(today);
@@ -2486,10 +2486,18 @@ function showFinalWeeklyReport() {
 
   const metricBlocks = reportMetrics.map(metric => {
     return `${metric.name}
-Факт за предыдущую неделю: ${getPreviousWeekFact(metric)}
 
-План на текущую неделю:
-${getCurrentWeekPlan(metric)}`;
+  Факт по метрике за предыдущую неделю:
+  ${getPreviousWeekFact(metric)}
+
+  План за предыдущую неделю:
+  ${getPreviousWeekPlan(metric.id)}
+
+  Факт выполнения за предыдущую неделю:
+  ${getPreviousWeekFactText(metric.id)}
+
+  План на текущую неделю:
+  ${getCurrentWeekPlan(metric.id)}`;
   }).join('\n\n━━━━━━━━━━━━━━\n\n');
 
   const report = `Итоговый отчёт
@@ -2501,6 +2509,46 @@ ${metricBlocks}
 
 Ссылка на дашборд:
 https://redplus1.github.io/redplus-dashboard/`;
+
+  return report;
+}
+
+function getPreviousWeekPlan(metricId) {
+  const items = planner
+    .filter(p =>
+      p.week_start === previousWeekStartISO &&
+      p.metric_id === metricId &&
+      p.plan_text &&
+      String(p.plan_text).trim()
+    )
+    .sort((a, b) => String(a.plan_date).localeCompare(String(b.plan_date)));
+
+  if (!items.length) return '—';
+
+  return items.map(p => {
+    return `${p.plan_date}: ${String(p.plan_text).trim()}`;
+  }).join('\n');
+}
+
+function getPreviousWeekFactText(metricId) {
+  const items = planner
+    .filter(p =>
+      p.week_start === previousWeekStartISO &&
+      p.metric_id === metricId &&
+      p.fact_text &&
+      String(p.fact_text).trim()
+    )
+    .sort((a, b) => String(a.plan_date).localeCompare(String(b.plan_date)));
+
+  if (!items.length) return '—';
+
+  return items.map(p => {
+    return `${p.plan_date}: ${String(p.fact_text).trim()}`;
+  }).join('\n');
+}
+
+function showFinalWeeklyReport() {
+  const report = buildFinalWeeklyReport();
 
   showModal(`
     <div class="modal-backdrop" onclick="closeModal()">
@@ -2517,6 +2565,17 @@ https://redplus1.github.io/redplus-dashboard/`;
       </div>
     </div>
   `);
+}
+
+function copyFinalWeeklyReport() {
+  const report = buildFinalWeeklyReport();
+
+  navigator.clipboard.writeText(report)
+    .then(() => toast('Итоговый отчёт скопирован'))
+    .catch(err => {
+      console.error(err);
+      toast('Ошибка копирования', 'error');
+    });
 }
 
 function buildWeeklySummaryReport() {
