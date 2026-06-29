@@ -2140,7 +2140,7 @@ ${parts.join('\n━━━━━━━━━━━━━━\n')}
 `;
 
   showModal(`
-    <div class="modal-backdrop" onclick="closeModal()">
+    <div class="modal-bg" onclick="closeModal()">
       <div class="modal" onclick="event.stopPropagation()" style="max-width:900px;">
         <div class="flex between center">
           <h3>Отчёт по планеру</h3>
@@ -2210,12 +2210,6 @@ ${sections.join('\n\n━━━━━━━━━━━━━━━━━━━�
     console.error(e);
     toast('Ошибка копирования', 'error');
   }
-}
-
-function shiftPlannerWeek(delta) {
-  if (!plannerWeekStart) plannerWeekStart = isoFromDate(startOfWeek(new Date()));
-  plannerWeekStart = isoFromDate(addDays(dateFromISO(plannerWeekStart), delta * 7));
-  renderPage('weeklyPlanner');
 }
 
 function viewWeekly() {
@@ -2395,8 +2389,6 @@ function getPlannerWeeklyText(metricId, field) {
 
 </div> <!-- закрывает flex between center -->
 
-<div class="row cols-1 mt-16">
-
       <div class="row cols-1 mt-16">
         <div>
           <div class="scroll-x">
@@ -2484,6 +2476,40 @@ function buildFinalWeeklyReport() {
     }).join('\n');
   }
 
+
+  function getPreviousWeekPlan(metricId) {
+    const items = planner
+      .filter(p =>
+        p.week_start === previousWeekStartISO &&
+        p.metric_id === metricId &&
+        p.plan_text &&
+        String(p.plan_text).trim()
+      )
+      .sort((a, b) => String(a.plan_date).localeCompare(String(b.plan_date)));
+
+    if (!items.length) return '—';
+
+    return items.map(p => {
+      return `${p.plan_date}: ${String(p.plan_text).trim()}`;
+    }).join('\n');
+  }
+
+  function getPreviousWeekFactText(metricId) {
+    const items = planner
+      .filter(p =>
+        p.week_start === previousWeekStartISO &&
+        p.metric_id === metricId &&
+        p.fact_text &&
+        String(p.fact_text).trim()
+      )
+      .sort((a, b) => String(a.plan_date).localeCompare(String(b.plan_date)));
+
+    if (!items.length) return '—';
+
+    return items.map(p => {
+      return `${p.plan_date}: ${String(p.fact_text).trim()}`;
+    }).join('\n');
+  }
   const metricBlocks = reportMetrics.map(metric => {
     return `${metric.name}
 
@@ -2513,45 +2539,11 @@ https://redplus1.github.io/redplus-dashboard/`;
   return report;
 }
 
-function getPreviousWeekPlan(metricId) {
-  const items = planner
-    .filter(p =>
-      p.week_start === previousWeekStartISO &&
-      p.metric_id === metricId &&
-      p.plan_text &&
-      String(p.plan_text).trim()
-    )
-    .sort((a, b) => String(a.plan_date).localeCompare(String(b.plan_date)));
-
-  if (!items.length) return '—';
-
-  return items.map(p => {
-    return `${p.plan_date}: ${String(p.plan_text).trim()}`;
-  }).join('\n');
-}
-
-function getPreviousWeekFactText(metricId) {
-  const items = planner
-    .filter(p =>
-      p.week_start === previousWeekStartISO &&
-      p.metric_id === metricId &&
-      p.fact_text &&
-      String(p.fact_text).trim()
-    )
-    .sort((a, b) => String(a.plan_date).localeCompare(String(b.plan_date)));
-
-  if (!items.length) return '—';
-
-  return items.map(p => {
-    return `${p.plan_date}: ${String(p.fact_text).trim()}`;
-  }).join('\n');
-}
-
 function showFinalWeeklyReport() {
   const report = buildFinalWeeklyReport();
 
   showModal(`
-    <div class="modal-backdrop" onclick="closeModal()">
+    <div class="modal-bg" onclick="closeModal()">
       <div class="modal" onclick="event.stopPropagation()" style="max-width:900px;">
         <div class="flex between center">
           <h3>Итоговый отчёт</h3>
@@ -2617,7 +2609,7 @@ function showWeeklySummaryReport() {
   const report = buildWeeklySummaryReport();
 
   showModal(`
-    <div class="modal-backdrop" onclick="closeModal()">
+    <div class="modal-bg" onclick="closeModal()">
       <div class="modal" onclick="event.stopPropagation()" style="max-width:900px;">
         <div class="flex between center">
           <h3>Отчёт недельной сводки</h3>
@@ -2689,7 +2681,10 @@ function postWeekly() {
     palette.muted
   ];
 
-  chartInstances.week = new Chart($('#chWeek'), {
+  const weekCanvas = $('#chWeek');
+  if (!weekCanvas) return;
+
+  chartInstances.week = new Chart(weekCanvas, {
     type: 'bar',
     data: {
       labels,
@@ -3626,32 +3621,6 @@ function exportHistoryCSV() {
   downloadFile('history.csv', csv, 'text/csv');
 }
 
-/* ============================================================
-   NAV BINDINGS
-   ============================================================ */
-document.addEventListener('click', e => {
-  const item = e.target.closest?.('.nav-item');
-  if (item) renderPage(item.dataset.page);
-});
-
-/* ============================================================
-   BOOT
-   ============================================================ */
-(function boot() {
-  const session = currentSession();
-  if (session) {
-    ensureSeed();
-    renderApp();
-  } else {
-    $('#loginScreen').classList.remove('hidden');
-    $('#app').classList.add('hidden');
-  }
-})();
-</script>
-</body>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-<script>
 
 function showMemberList(field) {
   const selectedDate = membersAnalyticsDate || todayISO();
@@ -3673,18 +3642,18 @@ function showMemberList(field) {
         const searchText = `${username} ${name}`.toLowerCase();
 
         return `
-          <li data-search="${searchText}">
-            ${username}${name ? ' — ' + name : ''}
+          <li data-search="${escapeHtml(searchText)}">
+            ${escapeHtml(username)}${name ? ' — ' + escapeHtml(name) : ''}
           </li>
         `;
       }).join('')
     : '<li>Нет данных</li>';
 
   showModal(`
-    <div class="modal-backdrop" onclick="closeModal()">
+    <div class="modal-bg" onclick="closeModal()">
       <div class="modal" onclick="event.stopPropagation()">
         <div class="flex between center">
-          <h3>${titles[field] || 'Список участников'} · ${selectedDate}</h3>
+          <h3>${escapeHtml(titles[field] || 'Список участников')} · ${selectedDate}</h3>
           <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
         </div>
 
@@ -3723,10 +3692,12 @@ function filterMemberList(listId, query) {
 }
 
 async function showChannelMembersForDate() {
+  const selectedDate = membersAnalyticsDate || todayISO();
+
   const { data, error } = await supabaseClient
     .from('telegram_members_snapshots')
     .select('*')
-    .eq('snapshot_date', todayISO())
+    .eq('snapshot_date', selectedDate)
     .eq('source', 'channel')
     .order('username', { ascending: true });
 
@@ -3736,27 +3707,44 @@ async function showChannelMembersForDate() {
     return;
   }
 
+  const listId = 'allChannelMembersList';
+
   const rows = data && data.length
     ? data.map(m => {
         const username = m.username ? '@' + m.username : 'без username';
         const name = [m.first_name, m.last_name].filter(Boolean).join(' ');
-        return `<li>${username}${name ? ' — ' + name : ''}</li>`;
+        const searchText = `${username} ${name}`.toLowerCase();
+
+        return `
+          <li data-search="${escapeHtml(searchText)}">
+            ${escapeHtml(username)}${name ? ' — ' + escapeHtml(name) : ''}
+          </li>
+        `;
       }).join('')
     : '<li>Нет данных за выбранную дату</li>';
 
   showModal(`
-    <div class="modal-backdrop" onclick="closeModal()">
+    <div class="modal-bg" onclick="closeModal()">
       <div class="modal" onclick="event.stopPropagation()">
         <div class="flex between center">
-          <h3>Все участники канала · ${todayISO()}</h3>
+          <h3>Все участники канала · ${selectedDate}</h3>
           <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
+        </div>
+
+        <div class="field mt-12">
+          <label>Поиск по username или имени</label>
+          <input
+            type="text"
+            placeholder="Введите username или имя"
+            oninput="filterMemberList('${listId}', this.value)"
+          />
         </div>
 
         <div class="hint mt-8">
           Всего участников: ${data ? data.length : 0}
         </div>
 
-        <ul style="margin-top:16px; line-height:1.8; max-height:60vh; overflow:auto;">
+        <ul id="${listId}" style="margin-top:16px; line-height:1.8; max-height:60vh; overflow:auto;">
           ${rows}
         </ul>
       </div>
@@ -3764,31 +3752,28 @@ async function showChannelMembersForDate() {
   `);
 }
 
-  const rows = data && data.length
-    ? data.map(m => {
-        const username = m.username ? '@' + m.username : 'без username';
-        const name = [m.first_name, m.last_name].filter(Boolean).join(' ');
-        return `<li>${username}${name ? ' — ' + name : ''}</li>`;
-      }).join('')
-    : '<li>Нет данных за выбранную дату</li>';
 
-  showModal(`
-    <div class="modal-backdrop" onclick="closeModal()">
-      <div class="modal" onclick="event.stopPropagation()">
-        <div class="flex between center">
-          <h3>Все участники канала · ${todayISO()}</h3>
-          <button class="btn ghost btn-sm" onclick="closeModal()">Закрыть</button>
-        </div>
-        <div class="hint mt-8">
-          Всего участников: ${data ? data.length : 0}
-        </div>
-        <ul style="margin-top:16px; line-height:1.8; max-height:60vh; overflow:auto;">
-          ${rows}
-        </ul>
-      </div>
-    </div>
-  `);
-}
+/* ============================================================
+   NAV BINDINGS
+   ============================================================ */
+document.addEventListener('click', e => {
+  const item = e.target.closest?.('.nav-item');
+  if (item) renderPage(item.dataset.page);
+});
 
+/* ============================================================
+   BOOT
+   ============================================================ */
+(function boot() {
+  const session = currentSession();
+  if (session) {
+    ensureSeed();
+    renderApp();
+  } else {
+    $('#loginScreen').classList.remove('hidden');
+    $('#app').classList.add('hidden');
+  }
+})();
 </script>
+</body>
 </html>
